@@ -170,6 +170,11 @@ Or build both:
 make BUILD_CUDA=1 BUILD_OPENCL=1
 ```
 
+### Python Pollard Rho/Kangaroo utility
+
+A prototype implementation of a dynamic bit-window Pollard Rho variant with tame and wild kangaroos and a CRT-based reconstruction is available in `tools/pollard_kangaroo_crt.py`. This script can use the built-in `python-ecdsa` backend or BitCrack's `secp256k1` bindings for better performance. Run the script with `-h` for usage information.
+
+
 ### Supporting this project
 
 If you find this project useful and would like to support it, consider making a donation. Your support is greatly appreciated!
