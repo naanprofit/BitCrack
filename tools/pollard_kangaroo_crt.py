@@ -69,7 +69,8 @@ def load_ice_backend():
     try:
         import secp256k1 as ice
     except ImportError:
-        sys.exit("[ERROR] --backend ice requested, but no `secp256k1` module found")
+        print("[WARN] `secp256k1` module not found; falling back to pure Python backend")
+        return None, None
 
     # pick up curve order if provided
     global N
@@ -173,7 +174,12 @@ def main():
     global scalar_multiplication, privatekey_to_h160, backend
     if args.backend == 'ice':
         scalar_multiplication, privatekey_to_h160 = load_ice_backend()
-        backend = 'ice'
+        if scalar_multiplication is None:
+            scalar_multiplication = py_scalar_multiplication
+            privatekey_to_h160   = py_privatekey_to_h160
+            backend = 'ecdsa'
+        else:
+            backend = 'ice'
     else:
         scalar_multiplication = py_scalar_multiplication
         privatekey_to_h160   = py_privatekey_to_h160

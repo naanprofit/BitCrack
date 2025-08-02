@@ -172,7 +172,11 @@ make BUILD_CUDA=1 BUILD_OPENCL=1
 
 ### Python Pollard Rho/Kangaroo utility
 
-A prototype implementation of a dynamic bit-window Pollard Rho variant with tame and wild kangaroos and a CRT-based reconstruction is available in `tools/pollard_kangaroo_crt.py`. This script can use the built-in `python-ecdsa` backend or BitCrack's `secp256k1` bindings for better performance. Run the script with `-h` for usage information.
+A prototype implementation of a dynamic bit-window Pollard Rho variant with tame and wild kangaroos and a CRT-based reconstruction is available in `tools/pollard_kangaroo_crt.py`.
+
+The script depends on the [`python-ecdsa`](https://pypi.org/project/ecdsa/) package and will optionally use a [`secp256k1`](https://pypi.org/project/secp256k1/) module if present for faster elliptic‑curve operations. If the `secp256k1` module is unavailable, the script automatically falls back to the pure Python backend.
+
+Run the script with `-h` for usage information.
 
 
 ### Supporting this project
