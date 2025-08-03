@@ -6,8 +6,18 @@
 #include <cstdint>
 #include <array>
 #include <set>
+#include <memory>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
+#include "PollardTypes.h"
+
+class PollardDevice {
+public:
+    virtual ~PollardDevice() {}
+    virtual void startTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed) = 0;
+    virtual void startWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed) = 0;
+    virtual bool popResult(PollardMatch &out) = 0;
+};
 
 class PollardEngine {
 public:
@@ -43,12 +53,18 @@ public:
     // power-of-two moduli.
     bool reconstruct(size_t target, secp256k1::uint256 &out);
 
-    // CPU based tame and wild walks using random steps.  The overloads with a
-    // seed parameter enable deterministic behaviour for testing.
+    // Walk routines consume results produced by the configured device.  The
+    // overloads with a seed parameter enable deterministic behaviour for
+    // testing and for GPU implementations that require an explicit seed.
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps);
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
     void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps);
     void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed);
+
+    // Replace the underlying device used to generate walk results.  By
+    // default a CPU implementation is used which enables unit tests to run
+    // without a GPU.  Ownership of ``device`` is transferred to the engine.
+    void setDevice(std::unique_ptr<PollardDevice> device);
 
 private:
     struct TargetState {
@@ -61,6 +77,8 @@ private:
     unsigned int _windowBits;                 // number of bits per window
     std::vector<unsigned int> _offsets;       // bit offsets of each window
     std::vector<TargetState> _targets;        // state per target hash
+
+    std::unique_ptr<PollardDevice> _device;   // producer of walk results
 
     bool checkPoint(const secp256k1::ecpoint &p);
     void enumerateCandidate(const secp256k1::uint256 &priv,

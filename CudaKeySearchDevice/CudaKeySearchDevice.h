@@ -9,6 +9,8 @@
 #include "CudaHashLookup.h"
 #include "CudaAtomicList.h"
 #include "cudaUtil.h"
+#include "../util/RingBuffer.h"
+#include "../KeyFinder/PollardTypes.h"
 
 // Structures that exist on both host and device side
 struct CudaDeviceResult {
@@ -67,6 +69,9 @@ private:
 
     bool verifyKey(const secp256k1::uint256 &privateKey, const secp256k1::ecpoint &publicKey, const unsigned int hash[5], bool compressed);
 
+    // Buffer used when running in Pollard mode
+    SimpleRingBuffer<PollardMatch> _pollardBuffer;
+
 public:
 
     CudaKeySearchDevice(int device, int threads, int pointsPerThread, int blocks = 0);
@@ -86,6 +91,10 @@ public:
     virtual void getMemoryInfo(uint64_t &freeMem, uint64_t &totalMem);
 
     virtual secp256k1::uint256 getNextKey();
+
+    // Pollard mode interface
+    void runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
+    bool getPollardResult(PollardMatch &out);
 };
 
 #endif
