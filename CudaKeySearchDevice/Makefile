@@ -8,7 +8,7 @@ all:    cuda
 
 cuda:
 ;for file in ${CPPSRC} ; do\
-;   ${NVCC} -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE};\
+;   ${NVCC} -x cu -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE};\
 ;done
 
 ;for file in ${CUSRC} ; do\
