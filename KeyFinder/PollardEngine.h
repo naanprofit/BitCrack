@@ -46,7 +46,9 @@ public:
     PollardEngine(ResultCallback cb,
                   unsigned int windowBits,
                   const std::vector<unsigned int> &offsets,
-                  const std::vector<std::array<unsigned int,5>> &targets);
+                  const std::vector<std::array<unsigned int,5>> &targets,
+                  unsigned int batchSize = 1024,
+                  unsigned int pollInterval = 100);
 
     // Add a constraint of the form k \equiv value (mod 2^bits) for ``target``
     void addConstraint(size_t target, unsigned int bits,
@@ -90,6 +92,9 @@ private:
 
     std::unique_ptr<PollardDevice> _device;   // producer of walk results
 
+    unsigned int _batchSize;                  // windows processed per poll
+    unsigned int _pollInterval;               // milliseconds between polls
+
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
     uint64_t _reconstructionAttempts = 0;     // number of CRT solves attempted
@@ -99,6 +104,8 @@ private:
     bool checkPoint(const secp256k1::ecpoint &p);
     void enumerateCandidate(const secp256k1::uint256 &priv,
                             const secp256k1::ecpoint &pub);
+    void handleMatch(const PollardMatch &m);
+    void pollDevice();
 
     static uint64_t hashWindow(const unsigned int h[5], unsigned int offset,
                                unsigned int bits);

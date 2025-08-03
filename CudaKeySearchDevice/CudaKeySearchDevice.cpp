@@ -3,6 +3,14 @@
 #include "util.h"
 #include "cudabridge.h"
 #include "AddressUtil.h"
+#include <cstring>
+
+struct CudaPollardMatch {
+    unsigned long long k[4];
+    unsigned int hash[5];
+};
+
+extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out, unsigned long long seed);
 
 void CudaKeySearchDevice::cudaCall(cudaError_t err)
 {
@@ -318,12 +326,29 @@ secp256k1::uint256 CudaKeySearchDevice::getNextKey()
 void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed)
 {
     (void)steps;
-    (void)seed;
     _pollardBuffer.clear();
+
+    CudaPollardMatch *d_out = nullptr;
+    cudaStream_t stream;
+    cudaCall(cudaStreamCreate(&stream));
+    cudaCall(cudaMalloc(&d_out, sizeof(CudaPollardMatch)));
+
+    pollardRandomWalk<<<_blocks, _threads, 0, stream>>>(d_out, seed);
+
+    CudaPollardMatch h_out;
+    cudaCall(cudaMemcpyAsync(&h_out, d_out, sizeof(CudaPollardMatch), cudaMemcpyDeviceToHost, stream));
+    cudaCall(cudaStreamSynchronize(stream));
+
     PollardMatch m;
-    m.scalar = start;
-    memset(m.hash, 0, sizeof(m.hash));
+    for(int i = 0; i < 4; ++i) {
+        m.scalar.v[i * 2]     = static_cast<unsigned int>(h_out.k[i] & 0xFFFFFFFFULL);
+        m.scalar.v[i * 2 + 1] = static_cast<unsigned int>(h_out.k[i] >> 32);
+    }
+    std::memcpy(m.hash, h_out.hash, sizeof(m.hash));
     _pollardBuffer.push(m);
+
+    cudaCall(cudaFree(d_out));
+    cudaCall(cudaStreamDestroy(stream));
 }
 
 bool CudaKeySearchDevice::getPollardResult(PollardMatch &out)

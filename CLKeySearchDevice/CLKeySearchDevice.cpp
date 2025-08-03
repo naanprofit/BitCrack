@@ -2,6 +2,10 @@
 #include "Logger.h"
 #include "util.h"
 #include "CLKeySearchDevice.h"
+#include <cstring>
+#include <fstream>
+#include <iterator>
+#include <cstdint>
 
 // Defined in bitcrack_cl.cpp which gets build in the pre-build event
 extern char _bitcrack_cl[];
@@ -13,6 +17,11 @@ typedef struct {
     unsigned int y[8];
     unsigned int digest[5];
 }CLDeviceResult;
+
+struct PollardCLMatch {
+    uint64_t k[4];
+    uint32_t hash[5];
+};
 
 
 static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
@@ -583,12 +592,38 @@ secp256k1::uint256 CLKeySearchDevice::getNextKey()
 void CLKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed)
 {
     (void)steps;
-    (void)seed;
     _pollardBuffer.clear();
+
+    std::ifstream srcFile("CLKeySearchDevice/clPollard.cl");
+    std::string src((std::istreambuf_iterator<char>(srcFile)), std::istreambuf_iterator<char>());
+    cl::CLProgram prog(*_clContext, src.c_str());
+    cl_program program = prog.getProgram();
+
+    cl_int err = 0;
+    cl_kernel kernel = clCreateKernel(program, "pollard_random_walk", &err);
+    cl_mem d_out = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardCLMatch), NULL, &err);
+
+    cl_command_queue q = _clContext->getQueue();
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_out);
+    cl_ulong seedArg = seed;
+    clSetKernelArg(kernel, 1, sizeof(cl_ulong), &seedArg);
+
+    size_t global = 1;
+    clEnqueueNDRangeKernel(q, kernel, 1, NULL, &global, NULL, 0, NULL, NULL);
+    PollardCLMatch h_out;
+    clEnqueueReadBuffer(q, d_out, CL_FALSE, 0, sizeof(PollardCLMatch), &h_out, 0, NULL, NULL);
+    clFinish(q);
+
     PollardMatch m;
-    m.scalar = start;
-    memset(m.hash, 0, sizeof(m.hash));
+    for(int i = 0; i < 4; ++i) {
+        m.scalar.v[i * 2]     = static_cast<unsigned int>(h_out.k[i] & 0xFFFFFFFFULL);
+        m.scalar.v[i * 2 + 1] = static_cast<unsigned int>(h_out.k[i] >> 32);
+    }
+    std::memcpy(m.hash, h_out.hash, sizeof(m.hash));
     _pollardBuffer.push(m);
+
+    clReleaseMemObject(d_out);
+    clReleaseKernel(kernel);
 }
 
 bool CLKeySearchDevice::getPollardResult(PollardMatch &out)

@@ -7,6 +7,7 @@
 #include <random>
 #include <limits>
 #include <chrono>
+#include <thread>
 #include "../util/RingBuffer.h"
 #include "../util/util.h"
 #include "../Logger/Logger.h"
@@ -130,13 +131,68 @@ uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset,
     }
     return val & (((uint64_t)1 << bits) - 1ULL);
 }
+
 } // namespace
+
+void PollardEngine::handleMatch(const PollardMatch &m) {
+    for(size_t t = 0; t < _targets.size(); ++t) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) {
+                continue;
+            }
+            if(_targets[t].seenOffsets.count(off)) {
+                continue;
+            }
+            uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
+            uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
+            if(got == want) {
+                unsigned int modBits = off + _windowBits;
+                if(modBits > 256) {
+                    continue;
+                }
+                uint256 mask = maskBits(modBits);
+                uint256 full;
+                for(int w = 0; w < 8; ++w) {
+                    full.v[w] = m.scalar.v[w] & mask.v[w];
+                }
+                PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, full};
+                processWindow(w);
+            }
+        }
+    }
+}
+
+void PollardEngine::pollDevice() {
+    if(!_device) {
+        return;
+    }
+    PollardMatch m;
+    auto delay = std::chrono::milliseconds(_pollInterval);
+    while(true) {
+        size_t processed = 0;
+        while(processed < _batchSize && _device->popResult(m)) {
+            handleMatch(m);
+            processed++;
+        }
+        if(processed == 0) {
+            std::this_thread::sleep_for(delay);
+            if(!_device->popResult(m)) {
+                break;
+            }
+            handleMatch(m);
+        }
+        std::this_thread::sleep_for(delay);
+    }
+}
 
 PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int windowBits,
                              const std::vector<unsigned int> &offsets,
-                             const std::vector<std::array<unsigned int,5>> &targets)
-    : _callback(cb), _windowBits(windowBits), _offsets(offsets) {
+                             const std::vector<std::array<unsigned int,5>> &targets,
+                             unsigned int batchSize,
+                             unsigned int pollInterval)
+    : _callback(cb), _windowBits(windowBits), _offsets(offsets),
+      _batchSize(batchSize), _pollInterval(pollInterval) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -298,34 +354,7 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
     _startTime = std::chrono::steady_clock::now();
 
     _device->startTameWalk(start, steps, seed);
-    PollardMatch m;
-    while(_device->popResult(m)) {
-        for(size_t t = 0; t < _targets.size(); ++t) {
-            for(unsigned int off : _offsets) {
-                if(off + _windowBits > 160) {
-                    continue;
-                }
-                if(_targets[t].seenOffsets.count(off)) {
-                    continue;
-                }
-                uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
-                uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
-                if(got == want) {
-                    unsigned int modBits = off + _windowBits;
-                    if(modBits > 256) {
-                        continue;
-                    }
-                    uint256 mask = maskBits(modBits);
-                    uint256 full;
-                    for(int w = 0; w < 8; ++w) {
-                        full.v[w] = m.scalar.v[w] & mask.v[w];
-                    }
-                    PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, full};
-                    processWindow(w);
-                }
-            }
-        }
-    }
+    pollDevice();
 
     auto end = std::chrono::steady_clock::now();
     double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end - _startTime).count() / 1000.0;
@@ -352,34 +381,7 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t s
     _startTime = std::chrono::steady_clock::now();
 
     _device->startWildWalk(start, steps, seed);
-    PollardMatch m;
-    while(_device->popResult(m)) {
-        for(size_t t = 0; t < _targets.size(); ++t) {
-            for(unsigned int off : _offsets) {
-                if(off + _windowBits > 160) {
-                    continue;
-                }
-                if(_targets[t].seenOffsets.count(off)) {
-                    continue;
-                }
-                uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
-                uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
-                if(got == want) {
-                    unsigned int modBits = off + _windowBits;
-                    if(modBits > 256) {
-                        continue;
-                    }
-                    uint256 mask = maskBits(modBits);
-                    uint256 full;
-                    for(int w = 0; w < 8; ++w) {
-                        full.v[w] = m.scalar.v[w] & mask.v[w];
-                    }
-                    PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, full};
-                    processWindow(w);
-                }
-            }
-        }
-    }
+    pollDevice();
 
     auto end = std::chrono::steady_clock::now();
     double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end - _startTime).count() / 1000.0;
