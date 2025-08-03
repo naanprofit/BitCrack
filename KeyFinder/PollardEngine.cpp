@@ -6,10 +6,78 @@
 #include <vector>
 #include <random>
 #include <limits>
+#include "../util/RingBuffer.h"
 
 using namespace secp256k1;
 
 namespace {
+
+// Simple CPU implementation of the device interface used for unit tests and
+// as a fallback when no GPU is available.
+class CPUPollardDevice : public PollardDevice {
+    unsigned int _windowBits;
+    SimpleRingBuffer<PollardMatch> _buffer;
+
+    bool checkPoint(const ecpoint &p) {
+        uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
+        return (p.x.v[0] & mask) == 0;
+    }
+
+public:
+    explicit CPUPollardDevice(unsigned int windowBits)
+        : _windowBits(windowBits), _buffer(1024) {}
+
+    void startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) override;
+    void startWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) override;
+    bool popResult(PollardMatch &out) override { return _buffer.pop(out); }
+};
+
+void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
+    _buffer.clear();
+    std::mt19937_64 rng(seed);
+    uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
+    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
+
+    uint256 k = start;
+    ecpoint p = multiplyPoint(k, G());
+
+    for(uint64_t i = 0; i < steps; ++i) {
+        uint64_t step = dist(rng);
+        uint256 stepVal(step);
+        k = k.add(stepVal);
+        p = addPoints(p, multiplyPoint(stepVal, G()));
+        if(checkPoint(p)) {
+            PollardMatch m;
+            m.scalar = k;
+            Hash::hashPublicKeyCompressed(p, m.hash);
+            _buffer.push(m);
+        }
+    }
+}
+
+void CPUPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
+    _buffer.clear();
+    std::mt19937_64 rng(seed);
+    uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
+    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
+
+    ecpoint p = start;
+    uint256 k(0);
+
+    for(uint64_t i = 0; i < steps; ++i) {
+        uint64_t step = dist(rng);
+        uint256 stepVal(step);
+        k = k.add(stepVal);
+        p = addPoints(p, multiplyPoint(stepVal, G()));
+        if(checkPoint(p)) {
+            PollardMatch m;
+            m.scalar = k;
+            Hash::hashPublicKeyCompressed(p, m.hash);
+            _buffer.push(m);
+        }
+    }
+}
+
 // Create a mask with the lowest ``bits`` bits set.
 uint256 maskBits(unsigned int bits) {
     uint256 m(0);
@@ -71,6 +139,11 @@ PollardEngine::PollardEngine(ResultCallback cb,
         s.hash = t;
         _targets.push_back(s);
     }
+    _device = std::unique_ptr<PollardDevice>(new CPUPollardDevice(windowBits));
+}
+
+void PollardEngine::setDevice(std::unique_ptr<PollardDevice> device) {
+    _device = std::move(device);
 }
 
 void PollardEngine::addConstraint(size_t target, unsigned int bits,
@@ -159,68 +232,47 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
 }
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
-    // Random-step walk beginning at ``start``.  At each distinguished point
-    // the RIPEMD160 hash of the current public key is compared against each
-    // target.  When a window of bits matches, the corresponding scalar window
-    // is recorded for that target.
-    std::mt19937_64 rng(seed);
-
-    uint64_t maxStep;
-    if(_windowBits >= 64) {
-        maxStep = std::numeric_limits<uint64_t>::max();
-    } else {
-        maxStep = (1ULL << _windowBits) - 1ULL;
+    if(!_device) {
+        return;
     }
-    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
 
-    uint256 k = start;
-    ecpoint p = multiplyPoint(k, G());
-
-    for(uint64_t i = 0; i < steps; ++i) {
-        uint64_t step = dist(rng);
-        uint256 stepVal(step);
-        k = k.add(stepVal);
-        p = addPoints(p, multiplyPoint(stepVal, G()));
-
-        if(checkPoint(p)) {
-            unsigned int digest[5];
-            Hash::hashPublicKeyCompressed(p, digest);
-
-            for(size_t t = 0; t < _targets.size(); ++t) {
-                for(unsigned int off : _offsets) {
-                    if(off + _windowBits > 160) {
+    _device->startTameWalk(start, steps, seed);
+    PollardMatch m;
+    while(_device->popResult(m)) {
+        for(size_t t = 0; t < _targets.size(); ++t) {
+            for(unsigned int off : _offsets) {
+                if(off + _windowBits > 160) {
+                    continue;
+                }
+                if(_targets[t].seenOffsets.count(off)) {
+                    continue;
+                }
+                uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
+                uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
+                if(got == want) {
+                    unsigned int modBits = off + _windowBits;
+                    if(modBits > 256) {
                         continue;
                     }
-                    if(_targets[t].seenOffsets.count(off)) {
-                        continue;
+                    uint256 mask = maskBits(modBits);
+                    uint256 full;
+                    for(int w = 0; w < 8; ++w) {
+                        full.v[w] = m.scalar.v[w] & mask.v[w];
                     }
-                    uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
-                    uint64_t got  = hashWindowLE(digest, off, _windowBits);
-                    if(got == want) {
-                        unsigned int modBits = off + _windowBits;
-                        if(modBits > 256) {
-                            continue;
-                        }
-                        uint256 mask = maskBits(modBits);
-                        uint256 full;
-                        for(int w = 0; w < 8; ++w) {
-                            full.v[w] = k.v[w] & mask.v[w];
-                        }
-                        addConstraint(t, modBits, full);
-                        _targets[t].seenOffsets.insert(off);
+                    addConstraint(t, modBits, full);
+                    _targets[t].seenOffsets.insert(off);
 
-                        uint256 priv;
-                        if(reconstruct(t, priv)) {
-                            ecpoint pub = multiplyPoint(priv, G());
-                            unsigned int h[5];
-                            Hash::hashPublicKeyCompressed(pub, h);
-                            bool match = true;
-                            for(int w = 0; w < 5; ++w) {
-                                if(h[w] != _targets[t].hash[w]) { match = false; break; }
-                            }
-                            if(match) {
-                                enumerateCandidate(priv, pub);
-                            }
+                    uint256 priv;
+                    if(reconstruct(t, priv)) {
+                        ecpoint pub = multiplyPoint(priv, G());
+                        unsigned int h[5];
+                        Hash::hashPublicKeyCompressed(pub, h);
+                        bool match = true;
+                        for(int w = 0; w < 5; ++w) {
+                            if(h[w] != _targets[t].hash[w]) { match = false; break; }
+                        }
+                        if(match) {
+                            enumerateCandidate(priv, pub);
                         }
                     }
                 }
@@ -234,67 +286,47 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
 }
 
 void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
-    // Wild walk begins from a supplied point and advances by random multiples
-    // of G while tracking the corresponding scalar ``k``.  Window constraints
-    // are gathered identically to the tame walk using hash comparisons.
-    std::mt19937_64 rng(seed);
-
-    uint64_t maxStep;
-    if(_windowBits >= 64) {
-        maxStep = std::numeric_limits<uint64_t>::max();
-    } else {
-        maxStep = (1ULL << _windowBits) - 1ULL;
+    if(!_device) {
+        return;
     }
-    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
 
-    ecpoint p = start;
-    uint256 k(0);
-
-    for(uint64_t i = 0; i < steps; ++i) {
-        uint64_t step = dist(rng);
-        uint256 stepVal(step);
-        k = k.add(stepVal);
-        p = addPoints(p, multiplyPoint(stepVal, G()));
-
-        if(checkPoint(p)) {
-            unsigned int digest[5];
-            Hash::hashPublicKeyCompressed(p, digest);
-
-            for(size_t t = 0; t < _targets.size(); ++t) {
-                for(unsigned int off : _offsets) {
-                    if(off + _windowBits > 160) {
+    _device->startWildWalk(start, steps, seed);
+    PollardMatch m;
+    while(_device->popResult(m)) {
+        for(size_t t = 0; t < _targets.size(); ++t) {
+            for(unsigned int off : _offsets) {
+                if(off + _windowBits > 160) {
+                    continue;
+                }
+                if(_targets[t].seenOffsets.count(off)) {
+                    continue;
+                }
+                uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
+                uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
+                if(got == want) {
+                    unsigned int modBits = off + _windowBits;
+                    if(modBits > 256) {
                         continue;
                     }
-                    if(_targets[t].seenOffsets.count(off)) {
-                        continue;
+                    uint256 mask = maskBits(modBits);
+                    uint256 full;
+                    for(int w = 0; w < 8; ++w) {
+                        full.v[w] = m.scalar.v[w] & mask.v[w];
                     }
-                    uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
-                    uint64_t got  = hashWindowLE(digest, off, _windowBits);
-                    if(got == want) {
-                        unsigned int modBits = off + _windowBits;
-                        if(modBits > 256) {
-                            continue;
-                        }
-                        uint256 mask = maskBits(modBits);
-                        uint256 full;
-                        for(int w = 0; w < 8; ++w) {
-                            full.v[w] = k.v[w] & mask.v[w];
-                        }
-                        addConstraint(t, modBits, full);
-                        _targets[t].seenOffsets.insert(off);
+                    addConstraint(t, modBits, full);
+                    _targets[t].seenOffsets.insert(off);
 
-                        uint256 priv;
-                        if(reconstruct(t, priv)) {
-                            ecpoint pub = multiplyPoint(priv, G());
-                            unsigned int h[5];
-                            Hash::hashPublicKeyCompressed(pub, h);
-                            bool match = true;
-                            for(int w = 0; w < 5; ++w) {
-                                if(h[w] != _targets[t].hash[w]) { match = false; break; }
-                            }
-                            if(match) {
-                                enumerateCandidate(priv, pub);
-                            }
+                    uint256 priv;
+                    if(reconstruct(t, priv)) {
+                        ecpoint pub = multiplyPoint(priv, G());
+                        unsigned int h[5];
+                        Hash::hashPublicKeyCompressed(pub, h);
+                        bool match = true;
+                        for(int w = 0; w < 5; ++w) {
+                            if(h[w] != _targets[t].hash[w]) { match = false; break; }
+                        }
+                        if(match) {
+                            enumerateCandidate(priv, pub);
                         }
                     }
                 }

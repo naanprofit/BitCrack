@@ -579,3 +579,19 @@ secp256k1::uint256 CLKeySearchDevice::getNextKey()
 
     return _start + secp256k1::uint256(totalPoints) * _iterations * _stride;
 }
+
+void CLKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed)
+{
+    (void)steps;
+    (void)seed;
+    _pollardBuffer.clear();
+    PollardMatch m;
+    m.scalar = start;
+    memset(m.hash, 0, sizeof(m.hash));
+    _pollardBuffer.push(m);
+}
+
+bool CLKeySearchDevice::getPollardResult(PollardMatch &out)
+{
+    return _pollardBuffer.pop(out);
+}

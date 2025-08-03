@@ -3,6 +3,8 @@
 
 #include "KeySearchDevice.h"
 #include "clContext.h"
+#include "../util/RingBuffer.h"
+#include "../KeyFinder/PollardTypes.h"
 
 typedef struct CLTargetList_
 {
@@ -107,6 +109,8 @@ private:
 
     uint64_t getOptimalBloomFilterMask(double p, size_t n);
 
+    SimpleRingBuffer<PollardMatch> _pollardBuffer;
+
 public:
 
     CLKeySearchDevice(uint64_t device, int threads, int pointsPerThread, int blocks = 0);
@@ -135,6 +139,9 @@ public:
     virtual void getMemoryInfo(uint64_t &freeMem, uint64_t &totalMem);
 
     virtual secp256k1::uint256 getNextKey();
+
+    void runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
+    bool getPollardResult(PollardMatch &out);
 };
 
 #endif
