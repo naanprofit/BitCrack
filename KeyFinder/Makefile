@@ -1,4 +1,4 @@
-CPPSRC:=$(wildcard *.cpp)
+CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
 
 all:
 ifeq ($(BUILD_CUDA), 1)
