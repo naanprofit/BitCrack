@@ -3,9 +3,40 @@
 #include <algorithm>
 #include <cstring>
 #include <vector>
-
+#include <random>
+#include <limits>
 
 using namespace secp256k1;
+
+namespace {
+// Create a mask with the lowest ``bits`` bits set.
+uint256 maskBits(unsigned int bits) {
+    uint256 m(0);
+    for(unsigned int i = 0; i < bits; ++i) {
+        m.v[i / 32] |= (1u << (i % 32));
+    }
+    return m;
+}
+
+// Combine two congruences using a simple CRT solver tailored for moduli
+// that are powers of two.  The resulting constraint contains the union of
+// known low bits from ``a`` and ``b``.
+bool combineCRT(const PollardEngine::Constraint &a,
+                const PollardEngine::Constraint &b,
+                PollardEngine::Constraint &out) {
+    unsigned int overlap = std::min(a.bits, b.bits);
+    uint256 mask = maskBits(overlap);
+
+    for(int w = 0; w < 8; ++w) {
+        if((a.value.v[w] & mask.v[w]) != (b.value.v[w] & mask.v[w])) {
+            return false; // inconsistent constraints
+        }
+    }
+
+    out = (a.bits >= b.bits) ? a : b;
+    return true;
+}
+} // namespace
 
 PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int windowBits,
@@ -29,42 +60,18 @@ bool PollardEngine::reconstruct(uint256 &out) {
                   return a.bits < b.bits;
               });
 
-    uint256 x = _constraints[0].value;
-    unsigned int known = _constraints[0].bits;
+    Constraint acc = _constraints[0];
 
     for(size_t i = 1; i < _constraints.size(); ++i) {
-        const Constraint &c = _constraints[i];
-
-        unsigned int overlap = std::min(known, c.bits);
-
-        // Mask covering the overlapping region.
-        uint256 mask(0);
-        for(unsigned int j = 0; j < overlap; ++j) {
-            mask.v[j / 32] |= (1u << (j % 32));
+        Constraint combined;
+        if(!combineCRT(acc, _constraints[i], combined)) {
+            return false;
         }
-
-        // Ensure the overlapping bits agree.
-        for(int w = 0; w < 8; ++w) {
-            if((x.v[w] & mask.v[w]) != (c.value.v[w] & mask.v[w])) {
-                return false; // inconsistent constraint
-            }
-        }
-
-        if(c.bits > known) {
-            // Merge in new higher bits.
-            for(unsigned int bit = overlap; bit < c.bits; ++bit) {
-                unsigned int word = bit / 32;
-                unsigned int shift = bit % 32;
-                if(c.value.v[word] & (1u << shift)) {
-                    x.v[word] |= (1u << shift);
-                }
-            }
-            known = c.bits;
-        }
+        acc = combined;
     }
 
-    out = x;
-    return known >= 256;
+    out = acc.value;
+    return acc.bits >= 256;
 }
 
 bool PollardEngine::checkPoint(const ecpoint &p) {
@@ -88,21 +95,39 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
 }
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
-    // Sequential walk beginning at ``start``.  Whenever a distinguished point is
-    // encountered we record windows from the current private key and feed them
-    // to the CRT solver.
+    // Random-step walk beginning at ``start``.  At each distinguished point
+    // windows from the current scalar are recorded and fed to the CRT solver.
+    std::mt19937_64 rng(std::random_device{}());
+
+    uint64_t maxStep;
+    if(_windowBits >= 64) {
+        maxStep = std::numeric_limits<uint64_t>::max();
+    } else {
+        maxStep = (1ULL << _windowBits) - 1ULL;
+    }
+    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
+
     uint256 k = start;
     ecpoint p = multiplyPoint(k, G());
 
     for(uint64_t i = 0; i < steps; ++i) {
+        uint64_t step = dist(rng);
+        uint256 stepVal(step);
+        k = k.add(stepVal);
+        p = addPoints(p, multiplyPoint(stepVal, G()));
+
         if(checkPoint(p)) {
             for(unsigned int off : _offsets) {
-                uint64_t modBits = off + _windowBits;
-                if(modBits >= 64) {
-                    continue; // limitation of 64-bit accumulation
+                unsigned int modBits = off + _windowBits;
+                if(modBits > 256) {
+                    continue;
                 }
-                uint64_t full = k.toUint64() & ((1ULL << modBits) - 1ULL);
-                addConstraint(modBits, uint256(full));
+                uint256 mask = maskBits(modBits);
+                uint256 full;
+                for(int w = 0; w < 8; ++w) {
+                    full.v[w] = k.v[w] & mask.v[w];
+                }
+                addConstraint(modBits, full);
             }
 
             uint256 priv;
@@ -110,27 +135,44 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
                 enumerateCandidate(priv, multiplyPoint(priv, G()));
             }
         }
-
-        k = k.add(uint256(1));
-        p = addPoints(p, G());
     }
 }
 
 void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
-    // Wild walk begins from a supplied point and advances by G each step while
-    // tracking the corresponding scalar ``k``.  Window constraints are gathered
-    // identically to the tame walk.
+    // Wild walk begins from a supplied point and advances by random multiples
+    // of G while tracking the corresponding scalar ``k``.  Window constraints
+    // are gathered identically to the tame walk.
+    std::mt19937_64 rng(std::random_device{}());
+
+    uint64_t maxStep;
+    if(_windowBits >= 64) {
+        maxStep = std::numeric_limits<uint64_t>::max();
+    } else {
+        maxStep = (1ULL << _windowBits) - 1ULL;
+    }
+    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
+
     ecpoint p = start;
     uint256 k(0);
+
     for(uint64_t i = 0; i < steps; ++i) {
+        uint64_t step = dist(rng);
+        uint256 stepVal(step);
+        k = k.add(stepVal);
+        p = addPoints(p, multiplyPoint(stepVal, G()));
+
         if(checkPoint(p)) {
             for(unsigned int off : _offsets) {
-                uint64_t modBits = off + _windowBits;
-                if(modBits >= 64) {
+                unsigned int modBits = off + _windowBits;
+                if(modBits > 256) {
                     continue;
                 }
-                uint64_t full = k.toUint64() & ((1ULL << modBits) - 1ULL);
-                addConstraint(modBits, uint256(full));
+                uint256 mask = maskBits(modBits);
+                uint256 full;
+                for(int w = 0; w < 8; ++w) {
+                    full.v[w] = k.v[w] & mask.v[w];
+                }
+                addConstraint(modBits, full);
             }
 
             uint256 priv;
@@ -138,9 +180,6 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
                 enumerateCandidate(priv, multiplyPoint(priv, G()));
             }
         }
-
-        k = k.add(uint256(1));
-        p = addPoints(p, G());
     }
 }
 
