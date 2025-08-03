@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <cstdint>
+#include <vector>
 
 // Defined in bitcrack_cl.cpp which gets build in the pre-build event
 extern char _bitcrack_cl[];
@@ -591,7 +592,7 @@ secp256k1::uint256 CLKeySearchDevice::getNextKey()
 
 void CLKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed)
 {
-    (void)steps;
+    (void)start;
     _pollardBuffer.clear();
 
     std::ifstream srcFile("CLKeySearchDevice/clPollard.cl");
@@ -601,28 +602,42 @@ void CLKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t ste
 
     cl_int err = 0;
     cl_kernel kernel = clCreateKernel(program, "pollard_random_walk", &err);
-    cl_mem d_out = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardCLMatch), NULL, &err);
+    cl_mem d_out = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardCLMatch) * steps, NULL, &err);
+    cl_mem d_count = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(cl_uint), NULL, &err);
 
     cl_command_queue q = _clContext->getQueue();
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_out);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_count);
+    cl_uint maxOut = static_cast<cl_uint>(steps);
+    clSetKernelArg(kernel, 2, sizeof(cl_uint), &maxOut);
     cl_ulong seedArg = seed;
-    clSetKernelArg(kernel, 1, sizeof(cl_ulong), &seedArg);
+    clSetKernelArg(kernel, 3, sizeof(cl_ulong), &seedArg);
+    cl_uint stepsArg = static_cast<cl_uint>(steps);
+    clSetKernelArg(kernel, 4, sizeof(cl_uint), &stepsArg);
+    cl_uint windowBits = 8;
+    clSetKernelArg(kernel, 5, sizeof(cl_uint), &windowBits);
 
     size_t global = 1;
     clEnqueueNDRangeKernel(q, kernel, 1, NULL, &global, NULL, 0, NULL, NULL);
-    PollardCLMatch h_out;
-    clEnqueueReadBuffer(q, d_out, CL_FALSE, 0, sizeof(PollardCLMatch), &h_out, 0, NULL, NULL);
+
+    std::vector<PollardCLMatch> h_out(steps);
+    cl_uint h_count = 0;
+    clEnqueueReadBuffer(q, d_count, CL_FALSE, 0, sizeof(cl_uint), &h_count, 0, NULL, NULL);
+    clEnqueueReadBuffer(q, d_out, CL_FALSE, 0, sizeof(PollardCLMatch) * steps, h_out.data(), 0, NULL, NULL);
     clFinish(q);
 
-    PollardMatch m;
-    for(int i = 0; i < 4; ++i) {
-        m.scalar.v[i * 2]     = static_cast<unsigned int>(h_out.k[i] & 0xFFFFFFFFULL);
-        m.scalar.v[i * 2 + 1] = static_cast<unsigned int>(h_out.k[i] >> 32);
+    for(cl_uint i = 0; i < h_count; ++i) {
+        PollardMatch m;
+        for(int j = 0; j < 4; ++j) {
+            m.scalar.v[j * 2]     = static_cast<unsigned int>(h_out[i].k[j] & 0xFFFFFFFFUL);
+            m.scalar.v[j * 2 + 1] = static_cast<unsigned int>(h_out[i].k[j] >> 32);
+        }
+        std::memcpy(m.hash, h_out[i].hash, sizeof(m.hash));
+        _pollardBuffer.push(m);
     }
-    std::memcpy(m.hash, h_out.hash, sizeof(m.hash));
-    _pollardBuffer.push(m);
 
     clReleaseMemObject(d_out);
+    clReleaseMemObject(d_count);
     clReleaseKernel(kernel);
 }
 

@@ -1,8 +1,9 @@
 NAME=PollardTests
 CPPSRC=main.cpp
+BINDIR?=.
 
 all:
-	${CXX} -o pollardtests.bin ${CPPSRC} ../KeyFinder/PollardEngine.cpp ${INCLUDE} ${CXXFLAGS} ${LIBS} -lsecp256k1 -laddressutil -lcryptoutil -lutil -llogger
+	${CXX} -o pollardtests.bin ${CPPSRC} ${CXXFLAGS}
 	mkdir -p $(BINDIR)
 	cp pollardtests.bin $(BINDIR)/pollardtests
 
