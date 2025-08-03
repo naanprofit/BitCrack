@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include "../KeyFinder/PollardTypes.h"
-#include "sha256.cuh"
-#include "ripemd160.cuh"
-#include "secp256k1.cuh"
+#include "sha256.cuh"   // SHA256 hashing for public keys
+#include "ripemd160.cuh" // RIPEMD160 finalisation
+#include "secp256k1.cuh" // EC point operations
 
 struct CudaPollardMatch {
     unsigned long long k[4];
