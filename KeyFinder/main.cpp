@@ -524,12 +524,12 @@ int runPollard()
 
 #ifdef BUILD_CUDA
             if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
-                engine.setDevice(std::make_unique<CudaPollardDevice>(engine, window, offsets, targetHashes));
+                engine.setDevice(std::unique_ptr<CudaPollardDevice>(new CudaPollardDevice(engine, window, offsets, targetHashes)));
             }
 #endif
 #ifdef BUILD_OPENCL
             if(_devices[_config.device].type == DeviceManager::DeviceType::OpenCL) {
-                engine.setDevice(std::make_unique<CLPollardDevice>(engine, window, offsets, targetHashes));
+                engine.setDevice(std::unique_ptr<CLPollardDevice>(new CLPollardDevice(engine, window, offsets, targetHashes)));
             }
 #endif
 
