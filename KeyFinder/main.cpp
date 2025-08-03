@@ -65,6 +65,8 @@ typedef struct {
     uint32_t windowSize = 0;
     uint32_t tames = 0;
     uint32_t wilds = 0;
+    uint32_t pollBatch = 1024;
+    uint32_t pollInterval = 100;
     bool full = false;
 }RunConfig;
 
@@ -235,6 +237,8 @@ void usage()
     printf("--window-size N        Bits per window (default 8)\n");
     printf("--tames N              Tame walk steps (0 disables)\n");
     printf("--wilds N              Wild walk steps (0 disables)\n");
+    printf("--poll-batch N        Windows processed per poll (default 1024)\n");
+    printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
     printf("--full                 Process entire keyspace\n");
 }
 
@@ -503,6 +507,8 @@ int runPollard()
     Logger::log(LogLevel::Info, "Window size: " + util::format(window));
     Logger::log(LogLevel::Info, "Tame walk steps: " + util::format(tameSteps));
     Logger::log(LogLevel::Info, "Wild walk steps: " + util::format(wildSteps));
+    Logger::log(LogLevel::Info, "Poll batch: " + util::format(_config.pollBatch));
+    Logger::log(LogLevel::Info, "Poll interval: " + util::format(_config.pollInterval) + " ms");
 
     _resultFound = false;
 
@@ -510,7 +516,8 @@ int runPollard()
 
     try {
         while(segmentStart.cmp(_config.endKey) <= 0) {
-            PollardEngine engine(resultCallback, window, offsets, targetHashes);
+            PollardEngine engine(resultCallback, window, offsets, targetHashes,
+                                 _config.pollBatch, _config.pollInterval);
 
             if(tameSteps > 0) {
                 engine.runTameWalk(segmentStart, tameSteps);
@@ -644,6 +651,8 @@ int main(int argc, char **argv)
     parser.add("", "--window-size", true);
     parser.add("", "--tames", true);
     parser.add("", "--wilds", true);
+    parser.add("", "--poll-batch", true);
+    parser.add("", "--poll-interval", true);
     parser.add("", "--full", false);
 
     try {
@@ -760,6 +769,18 @@ int main(int argc, char **argv)
             } else if(optArg.equals("", "--wilds")) {
                 try {
                     _config.wilds = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
+            } else if(optArg.equals("", "--poll-batch")) {
+                try {
+                    _config.pollBatch = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
+            } else if(optArg.equals("", "--poll-interval")) {
+                try {
+                    _config.pollInterval = util::parseUInt32(optArg.arg);
                 } catch(...) {
                     throw std::string("invalid argument");
                 }

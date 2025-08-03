@@ -128,6 +128,8 @@ following options:
 --window-size N        Number of bits in each window (default 8)
 --tames N              Steps for tame kangaroo walks (0 disables)
 --wilds N              Steps for wild kangaroo walks (0 disables)
+--poll-batch N        Windows processed per poll (default 1024)
+--poll-interval MS    Polling interval in milliseconds (default 100)
 ```
 
 The union of all windows must cover 256 bits for a full reconstruction.
