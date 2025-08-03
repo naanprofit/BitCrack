@@ -32,10 +32,12 @@ public:
     // Add a constraint of the form k \equiv value (mod 2^bits)
     void addConstraint(unsigned int bits, const secp256k1::uint256 &value);
 
-    // Attempt to reconstruct the private key from accumulated constraints.
+    // Attempt to reconstruct the private key from accumulated constraints using
+    // a CRT solver capable of combining arbitrarily large power-of-two
+    // moduli.
     bool reconstruct(secp256k1::uint256 &out);
 
-    // CPU based tame and wild walks.
+    // CPU based tame and wild walks using random steps.
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps);
     void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps);
 

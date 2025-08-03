@@ -444,28 +444,34 @@ int runPollard()
 {
     Logger::log(LogLevel::Info, "Pollard Rho search selected");
 
-    if(!_config.offsets.empty()) {
+    unsigned int window = _config.windowSize ? _config.windowSize : 8;
+    std::vector<unsigned int> offsets = _config.offsets;
+    uint64_t tameSteps = _config.tames;
+    uint64_t wildSteps = _config.wilds;
+
+    if(!offsets.empty()) {
         std::string s;
-        for(size_t i = 0; i < _config.offsets.size(); i++) {
+        for(size_t i = 0; i < offsets.size(); i++) {
             if(i != 0) {
                 s += ",";
             }
-            s += util::format(_config.offsets[i]);
+            s += util::format(offsets[i]);
         }
         Logger::log(LogLevel::Info, "Offsets: " + s);
     }
-    Logger::log(LogLevel::Info, "Window size: " + util::format(_config.windowSize));
-    Logger::log(LogLevel::Info, "Tames: " + util::format(_config.tames));
-    Logger::log(LogLevel::Info, "Wilds: " + util::format(_config.wilds));
-
+    Logger::log(LogLevel::Info, "Window size: " + util::format(window));
+    Logger::log(LogLevel::Info, "Tame walk steps: " + util::format(tameSteps));
+    Logger::log(LogLevel::Info, "Wild walk steps: " + util::format(wildSteps));
 
     try {
-        PollardEngine engine(resultCallback, _config.windowSize, _config.offsets);
-        engine.runTameWalk(secp256k1::uint256(0), _config.tames);
+        PollardEngine engine(resultCallback, window, offsets);
+        if(tameSteps > 0) {
+            engine.runTameWalk(secp256k1::uint256(0), tameSteps);
+        }
 
-        if(_config.wilds > 0) {
+        if(wildSteps > 0) {
             secp256k1::ecpoint g = secp256k1::G();
-            engine.runWildWalk(g, _config.wilds);
+            engine.runWildWalk(g, wildSteps);
         }
     } catch(const std::exception &ex) {
         Logger::log(LogLevel::Error, std::string("Pollard error: ") + ex.what());
