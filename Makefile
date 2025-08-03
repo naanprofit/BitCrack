@@ -1,5 +1,14 @@
 CUR_DIR=$(shell pwd)
-DIRS=util AddressUtil CmdParse CryptoUtil KeyFinderLib KeyFinder CLKeySearchDevice CudaKeySearchDevice cudaMath clMath clUtil cudaUtil secp256k1lib Logger embedcl
+
+# CPU-only build flag
+CPU ?= 0
+
+# Directories required for includes
+DIRS=util AddressUtil CmdParse CryptoUtil KeyFinderLib KeyFinder secp256k1lib Logger
+
+ifeq ($(CPU),0)
+DIRS+=CLKeySearchDevice CudaKeySearchDevice cudaMath clMath clUtil cudaUtil embedcl
+endif
 
 INCLUDE = $(foreach d, $(DIRS), -I$(CUR_DIR)/$d)
 
@@ -41,16 +50,23 @@ export OPENCL_LIB
 export OPENCL_INCLUDE
 export BUILD_OPENCL
 export BUILD_CUDA
+export CPU
 
 TARGETS=dir_addressutil dir_cmdparse dir_cryptoutil dir_keyfinderlib dir_keyfinder dir_secp256k1lib dir_util dir_logger dir_addrgen
 
+ifeq ($(CPU),1)
+        BUILD_CUDA=0
+        BUILD_OPENCL=0
+        TARGETS=dir_addressutil dir_cmdparse dir_cryptoutil dir_keyfinderlib dir_keyfinder dir_secp256k1lib dir_util dir_logger dir_pollardtests
+endif
+
 ifeq ($(BUILD_CUDA),1)
-	TARGETS:=${TARGETS} dir_cudaKeySearchDevice dir_cudautil
+     TARGETS:=${TARGETS} dir_cudaKeySearchDevice dir_cudautil
 endif
 
 ifeq ($(BUILD_OPENCL),1)
-	TARGETS:=${TARGETS} dir_embedcl dir_clKeySearchDevice dir_clutil dir_clunittest
-	CXXFLAGS:=${CXXFLAGS} -DCL_TARGET_OPENCL_VERSION=${OPENCL_VERSION}
+     TARGETS:=${TARGETS} dir_embedcl dir_clKeySearchDevice dir_clutil dir_clunittest
+     CXXFLAGS:=${CXXFLAGS} -DCL_TARGET_OPENCL_VERSION=${OPENCL_VERSION}
 endif
 
 all:	${TARGETS}
@@ -117,6 +133,10 @@ dir_pollardtests: dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil dir_l
 
 test: dir_pollardtests
 	$(BINDIR)/pollardtests
+
+.PHONY: cpu
+cpu:
+	$(MAKE) CPU=1 all
 
 clean:
 	make --directory AddressUtil clean
