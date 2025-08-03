@@ -1,4 +1,5 @@
 #include<stdio.h>
+#include<inttypes.h>
 #include<string>
 #include<fstream>
 #include<vector>
@@ -57,7 +58,7 @@ namespace util {
 	{
 		char buf[32] = "";
 
-		sprintf(buf, "%lld", x);
+                sprintf(buf, "%" PRIu64, x);
 
 		std::string s(buf);
 
@@ -106,11 +107,11 @@ namespace util {
 		}
 
 		if(isHex) {
-			if(sscanf(s.c_str(), "%llx", &val) != 1) {
+                        if(sscanf(s.c_str(), "%" PRIx64, &val) != 1) {
 				throw std::string("Expected an integer");
 			}
 		} else {
-			if(sscanf(s.c_str(), "%lld", &val) != 1) {
+                        if(sscanf(s.c_str(), "%" PRIu64, &val) != 1) {
 				throw std::string("Expected an integer");
 			}
 		}
@@ -239,7 +240,7 @@ namespace util {
 	{
 		char buf[100] = { 0 };
 
-		sprintf(buf, "%lld", (uint64_t)value);
+                sprintf(buf, "%" PRIu64, (uint64_t)value);
 
 		return std::string(buf);
 	}
