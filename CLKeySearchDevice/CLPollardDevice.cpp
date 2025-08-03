@@ -2,6 +2,7 @@
 #include <random>
 #include <limits>
 #include <cstring>
+#include "AddressUtil.h"
 
 using namespace secp256k1;
 
