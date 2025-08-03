@@ -95,9 +95,13 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
 }
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
+    runTameWalk(start, steps, std::random_device{}());
+}
+
+void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
     // Random-step walk beginning at ``start``.  At each distinguished point
     // windows from the current scalar are recorded and fed to the CRT solver.
-    std::mt19937_64 rng(std::random_device{}());
+    std::mt19937_64 rng(seed);
 
     uint64_t maxStep;
     if(_windowBits >= 64) {
@@ -139,10 +143,14 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
 }
 
 void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
+    runWildWalk(start, steps, std::random_device{}());
+}
+
+void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
     // Wild walk begins from a supplied point and advances by random multiples
     // of G while tracking the corresponding scalar ``k``.  Window constraints
     // are gathered identically to the tame walk.
-    std::mt19937_64 rng(std::random_device{}());
+    std::mt19937_64 rng(seed);
 
     uint64_t maxStep;
     if(_windowBits >= 64) {

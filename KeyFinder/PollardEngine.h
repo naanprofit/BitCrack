@@ -37,9 +37,12 @@ public:
     // moduli.
     bool reconstruct(secp256k1::uint256 &out);
 
-    // CPU based tame and wild walks using random steps.
+    // CPU based tame and wild walks using random steps.  The overloads with a
+    // seed parameter enable deterministic behaviour for testing.
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps);
+    void runTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
     void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps);
+    void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed);
 
 private:
     std::vector<Constraint> _constraints;
