@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -55,6 +56,12 @@ typedef struct {
     secp256k1::uint256 stride = 1;
 
     bool follow = false;
+
+    bool pollard = false;
+    std::vector<secp256k1::uint256> offsets;
+    uint32_t windowSize = 0;
+    uint32_t tames = 0;
+    uint32_t wilds = 0;
 }RunConfig;
 
 static RunConfig _config;
@@ -215,6 +222,11 @@ void usage()
     printf("--stride N              Increment by N keys at a time\n");
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
+    printf("--pollard              Enable Pollard's kangaroo mode\n");
+    printf("--offsets LIST         Comma-separated list of Pollard offsets\n");
+    printf("--window-size N        Window size for Pollard walk\n");
+    printf("--tames N              Number of tame kangaroos\n");
+    printf("--wilds N              Number of wild kangaroos\n");
 }
 
 
@@ -366,7 +378,7 @@ void readCheckpointFile()
     _config.totalkeys = (_config.nextKey - _config.startKey).toUint64();
 }
 
-int run()
+int runBruteForce()
 {
     if(_config.device < 0 || _config.device >= _devices.size()) {
         Logger::log(LogLevel::Error, "device " + util::format(_config.device) + " does not exist");
@@ -424,6 +436,36 @@ int run()
     }
 
     return 0;
+}
+
+int runPollard()
+{
+    Logger::log(LogLevel::Info, "Pollard Rho search selected");
+
+    if(!_config.offsets.empty()) {
+        std::string s;
+        for(size_t i = 0; i < _config.offsets.size(); i++) {
+            if(i != 0) {
+                s += ",";
+            }
+            s += _config.offsets[i].toString();
+        }
+        Logger::log(LogLevel::Info, "Offsets: " + s);
+    }
+    Logger::log(LogLevel::Info, "Window size: " + util::format(_config.windowSize));
+    Logger::log(LogLevel::Info, "Tames: " + util::format(_config.tames));
+    Logger::log(LogLevel::Info, "Wilds: " + util::format(_config.wilds));
+
+    // Pollard algorithm not yet implemented; fall back to brute force
+    return runBruteForce();
+}
+
+int run()
+{
+    if(_config.pollard) {
+        return runPollard();
+    }
+    return runBruteForce();
 }
 
 /**
@@ -517,6 +559,11 @@ int main(int argc, char **argv)
     parser.add("", "--continue", true);
     parser.add("", "--share", true);
     parser.add("", "--stride", true);
+    parser.add("", "--pollard", false);
+    parser.add("", "--offsets", true);
+    parser.add("", "--window-size", true);
+    parser.add("", "--tames", true);
+    parser.add("", "--wilds", true);
 
     try {
         parser.parse(argc, argv);
@@ -602,6 +649,39 @@ int main(int argc, char **argv)
                 }
             } else if(optArg.equals("-f", "--follow")) {
                 _config.follow = true;
+            } else if(optArg.equals("", "--pollard")) {
+                _config.pollard = true;
+            } else if(optArg.equals("", "--offsets")) {
+                std::stringstream ss(optArg.arg);
+                std::string item;
+                while(std::getline(ss, item, ',')) {
+                    item = util::trim(item);
+                    if(item.length() > 0) {
+                        try {
+                            _config.offsets.push_back(secp256k1::uint256(item));
+                        } catch(...) {
+                            throw std::string("invalid argument: expected hex string");
+                        }
+                    }
+                }
+            } else if(optArg.equals("", "--window-size")) {
+                try {
+                    _config.windowSize = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
+            } else if(optArg.equals("", "--tames")) {
+                try {
+                    _config.tames = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
+            } else if(optArg.equals("", "--wilds")) {
+                try {
+                    _config.wilds = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
             }
 
 		} catch(std::string err) {

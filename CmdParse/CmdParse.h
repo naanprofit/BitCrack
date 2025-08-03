@@ -50,7 +50,7 @@ public:
 
 	std::vector<OptArg> getArgs();
 
-	std::vector<std::string> getOperands();
+        std::vector<std::string> getOperands();
 };
 
 #endif
