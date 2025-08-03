@@ -34,42 +34,54 @@ bool CmdParse::get(const std::string opt, ArgType &t)
 
 void CmdParse::parse(int argc, char **argv)
 {
-	for(int i = 1; i < argc; i++) {
-		std::string arg(argv[i]);
+        for(int i = 1; i < argc; i++) {
+                std::string arg(argv[i]);
 
-		ArgType t;
-		if(get(arg, t)) {
-			// It is an option
+                std::string opt = arg;
+                std::string optValue;
 
-			OptArg a;
+                // Allow options in the form --option=value
+                size_t pos = arg.find('=');
+                if(pos != std::string::npos) {
+                        opt = arg.substr(0, pos);
+                        optValue = arg.substr(pos + 1);
+                }
 
-			if(t.hasArg) {
-				// It requires an argument
+                ArgType t;
+                if(get(opt, t)) {
+                        // It is an option
 
-				if(i == argc - 1) {
-					throw std::string("'" + arg + "' requires an argument");
-				}
+                        OptArg a;
 
-				std::string optArg(argv[i + 1]);
-				i++;
-				a.option = arg;
-				a.arg = optArg;
+                        if(t.hasArg) {
+                                // It requires an argument
 
-			} else {
-				// It does not require an argument
+                                if(pos == std::string::npos) {
+                                        if(i == argc - 1) {
+                                                throw std::string("'" + opt + "' requires an argument");
+                                        }
 
-				a.option = arg;
-				a.arg = "";
-			}
+                                        optValue = std::string(argv[++i]);
+                                }
 
-			_optArgs.push_back(a);
-			
-		} else {
-			// It is an operand
+                                a.option = opt;
+                                a.arg = optValue;
 
-			_operands.push_back(arg);
-		}
-	}
+                        } else {
+                                // It does not require an argument
+
+                                a.option = opt;
+                                a.arg = "";
+                        }
+
+                        _optArgs.push_back(a);
+
+                } else {
+                        // It is an operand
+
+                        _operands.push_back(arg);
+                }
+        }
 }
 
 std::vector<OptArg> CmdParse::getArgs()
