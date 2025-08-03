@@ -6,9 +6,20 @@
 
 __device__ void hashPublicKeyCompressed(const unsigned int*, unsigned int, unsigned int*);
 
-struct CudaPollardMatch {
-    unsigned long long k[4];
-    unsigned int hash[5];
+// Result written by the kernel when a hash window matches a target.
+struct GpuPollardWindow {
+    unsigned int targetIdx;
+    unsigned int offset;
+    unsigned int bits;
+    unsigned int k[8];
+};
+
+// Description of a window to test for each step.
+struct TargetWindow {
+    unsigned int targetIdx;
+    unsigned int offset;
+    unsigned int bits;
+    unsigned long long target;
 };
 
 struct RNGState {
@@ -48,6 +59,31 @@ __device__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[
     for(int i = 0; i < 5; i++) {
         hOut[i] = endian(hIn[i] + iv[(i + 1) % 5]);
     }
+}
+
+// Extract ``bits`` bits starting at ``offset`` from the RIPEMD160 digest
+// ``h``.  Bits are interpreted in little-endian order.
+__device__ unsigned long long hashWindow(const unsigned int h[5],
+                                         unsigned int offset,
+                                         unsigned int bits)
+{
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
+    unsigned long long val = 0ULL;
+    if(word < 5) {
+        val = ((unsigned long long)h[word]) >> bit;
+        if(bit + bits > 32 && word + 1 < 5) {
+            val |= ((unsigned long long)h[word + 1]) << (32 - bit);
+        }
+    }
+    if(bit + bits > 64 && word + 2 < 5) {
+        val |= ((unsigned long long)h[word + 2]) << (64 - bit);
+    }
+    if(bits < 64) {
+        unsigned long long mask = (bits == 64) ? 0xffffffffffffffffULL : ((1ULL << bits) - 1ULL);
+        val &= mask;
+    }
+    return val;
 }
 
 __device__ static void setPointInfinity(unsigned int x[8], unsigned int y[8])
@@ -161,7 +197,7 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
     }
 }
 
-extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
+extern "C" __global__ void pollardRandomWalk(GpuPollardWindow *out,
                                               unsigned int *outCount,
                                               unsigned int maxOut,
                                               const unsigned long long *seeds,
@@ -169,13 +205,13 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
                                               const unsigned int *startX,
                                               const unsigned int *startY,
                                               unsigned int steps,
-                                              unsigned int windowBits)
+                                              const TargetWindow *windows,
+                                              unsigned int windowCount)
 {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
     RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
     unsigned long long scalar = starts[tid];
     const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
-    unsigned long long mask = (windowBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << windowBits) - 1ULL);
     unsigned int px[8];
     unsigned int py[8];
 
@@ -202,20 +238,31 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
         copyBigInt(tx, px);
         copyBigInt(ty, py);
 
-        if((scalar & mask) == 0ULL) {
-            unsigned int digest[5];
-            unsigned int finalHash[5];
-            hashPublicKeyCompressed(px, py[7], digest);
-            doRMD160FinalRound(digest, finalHash);
-            unsigned int idx = atomicAdd(outCount, 1u);
-            if(idx < maxOut) {
-                for(int w = 0; w < 5; w++) {
-                    out[idx].hash[w] = finalHash[w];
+        // Hash the current point once per step
+        unsigned int digest[5];
+        unsigned int finalHash[5];
+        hashPublicKeyCompressed(px, py[7], digest);
+        doRMD160FinalRound(digest, finalHash);
+
+        // Compare against all requested windows
+        for(unsigned int w = 0; w < windowCount; ++w) {
+            TargetWindow tw = windows[w];
+            unsigned long long hv = hashWindow(finalHash, tw.offset, tw.bits);
+            if(hv == tw.target) {
+                unsigned int idx = atomicAdd(outCount, 1u);
+                if(idx < maxOut) {
+                    out[idx].targetIdx = tw.targetIdx;
+                    out[idx].offset    = tw.offset;
+                    out[idx].bits      = tw.bits;
+                    unsigned int modBits = tw.offset + tw.bits;
+                    unsigned long long mask = (modBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << modBits) - 1ULL);
+                    unsigned long long frag = scalar & mask;
+                    out[idx].k[0] = (unsigned int)(frag & 0xffffffffULL);
+                    out[idx].k[1] = (unsigned int)(frag >> 32);
+                    for(int j = 2; j < 8; ++j) {
+                        out[idx].k[j] = 0U;
+                    }
                 }
-                out[idx].k[0] = scalar & 0xffffffffULL;
-                out[idx].k[1] = scalar >> 32;
-                out[idx].k[2] = 0ULL;
-                out[idx].k[3] = 0ULL;
             }
         }
     }

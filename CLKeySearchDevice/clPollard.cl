@@ -1,7 +1,20 @@
+// Window reported back to the host when a hash window matches one of the
+// provided targets.  The scalar fragment contains the low ``offset + bits``
+// bits of the walk's scalar value.
 typedef struct {
-    ulong k[4];
-    uint hash[5];
-} PollardCLMatch;
+    uint targetIdx;
+    uint offset;
+    uint bits;
+    uint k[8];
+} PollardWindow;
+
+// Description of a bit window to test against the RIPEMD160 of each step.
+typedef struct {
+    uint targetIdx;
+    uint offset;
+    uint bits;
+    ulong target;    // expected window value (LSB order)
+} TargetWindow;
 
 typedef struct {
     ulong s0;
@@ -59,18 +72,41 @@ void hashPublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsi
     ripemd160sha256NoFinal(hash, digestOut);
 }
 
-__kernel void pollard_random_walk(__global PollardCLMatch *out,
+// Extract ``bits`` bits starting at ``offset`` from the 160-bit RIPEMD160
+// digest ``h``.  Bits are interpreted in little-endian order.
+ulong hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+{
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
+    ulong val = 0UL;
+    if(word < 5) {
+        val = ((ulong)h[word]) >> bit;
+        if(bit + bits > 32 && word + 1 < 5) {
+            val |= ((ulong)h[word + 1]) << (32 - bit);
+        }
+    }
+    if(bit + bits > 64 && word + 2 < 5) {
+        val |= ((ulong)h[word + 2]) << (64 - bit);
+    }
+    if(bits < 64) {
+        ulong mask = (bits == 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << bits) - 1UL);
+        val &= mask;
+    }
+    return val;
+}
+
+__kernel void pollard_random_walk(__global PollardWindow *out,
                                   __global uint *outCount,
                                   uint maxOut,
                                   __global ulong *seeds,
                                   uint steps,
-                                  uint windowBits)
+                                  __global const TargetWindow *windows,
+                                  uint windowCount)
 {
     size_t gid = get_global_id(0);
     RNGState rng = { seeds[gid] ^ (ulong)1, seeds[gid] + (ulong)1 };
     ulong scalar = 0UL;
     const ulong ORDER = (ulong)0xBFD25E8CD0364141UL;
-    ulong mask = (windowBits >= 64) ? (ulong)0xFFFFFFFFFFFFFFFFUL : (((ulong)1 << windowBits) - 1UL);
 
     uint px[8];
     uint py[8];
@@ -96,20 +132,31 @@ __kernel void pollard_random_walk(__global PollardCLMatch *out,
             copyBigInt(ty, py);
         }
 
-        if((scalar & mask) == 0UL) {
-            uint slot = atomic_inc(outCount);
-            if(slot < maxOut) {
-                uint digest[5];
-                uint finalHash[5];
-                hashPublicKeyCompressed(px, py[7], digest);
-                doRMD160FinalRound(digest, finalHash);
-                for(int w = 0; w < 5; w++) {
-                    out[slot].hash[w] = finalHash[w];
+        // Compute the RIPEMD160 of the current point once per step
+        uint digest[5];
+        uint finalHash[5];
+        hashPublicKeyCompressed(px, py[7], digest);
+        doRMD160FinalRound(digest, finalHash);
+
+        // Compare all requested windows against their targets
+        for(uint w = 0; w < windowCount; w++) {
+            TargetWindow tw = windows[w];
+            ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
+            if(hv == tw.target) {
+                uint slot = atomic_inc(outCount);
+                if(slot < maxOut) {
+                    out[slot].targetIdx = tw.targetIdx;
+                    out[slot].offset    = tw.offset;
+                    out[slot].bits      = tw.bits;
+                    uint modBits = tw.offset + tw.bits;
+                    ulong mask = (modBits >= 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << modBits) - 1UL);
+                    ulong frag = scalar & mask;
+                    out[slot].k[0] = (uint)(frag & 0xffffffffUL);
+                    out[slot].k[1] = (uint)(frag >> 32);
+                    for(int j = 2; j < 8; j++) {
+                        out[slot].k[j] = 0U;
+                    }
                 }
-                out[slot].k[0] = scalar & 0xffffffffUL;
-                out[slot].k[1] = scalar >> 32;
-                out[slot].k[2] = 0UL;
-                out[slot].k[3] = 0UL;
             }
         }
     }
