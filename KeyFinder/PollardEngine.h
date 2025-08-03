@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <functional>
+#include <cstdint>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
 
@@ -15,9 +16,18 @@ public:
 
     using ResultCallback = std::function<void(KeySearchResult)>;
 
+    /**
+     * Construct a PollardEngine.
+     *
+     * @param cb          Callback invoked for every candidate key recovered.
+     * @param windowBits  Size of each bit window collected from a walk.
+     * @param offsets     Bit offsets describing where in the key each window
+     *                    is collected.  The union of these windows is later fed
+     *                    into the Chinese Remainder Theorem (CRT) solver.
+     */
     PollardEngine(ResultCallback cb,
                   unsigned int windowBits,
-                  const std::vector<secp256k1::uint256> &offsets);
+                  const std::vector<unsigned int> &offsets);
 
     // Add a constraint of the form k \equiv value (mod 2^bits)
     void addConstraint(unsigned int bits, const secp256k1::uint256 &value);
@@ -32,10 +42,12 @@ public:
 private:
     std::vector<Constraint> _constraints;
     ResultCallback _callback;
-    unsigned int _windowBits;
+    unsigned int _windowBits;                 // number of bits per window
+    std::vector<unsigned int> _offsets;       // bit offsets of each window
 
     bool checkPoint(const secp256k1::ecpoint &p);
-    void enumerateCandidate(const secp256k1::uint256 &priv, const secp256k1::ecpoint &pub);
+    void enumerateCandidate(const secp256k1::uint256 &priv,
+                            const secp256k1::ecpoint &pub);
 };
 
 #endif

@@ -60,7 +60,7 @@ typedef struct {
     bool follow = false;
 
     bool pollard = false;
-    std::vector<secp256k1::uint256> offsets;
+    std::vector<unsigned int> offsets; // bit offsets for CRT windows
     uint32_t windowSize = 0;
     uint32_t tames = 0;
     uint32_t wilds = 0;
@@ -450,7 +450,7 @@ int runPollard()
             if(i != 0) {
                 s += ",";
             }
-            s += _config.offsets[i].toString();
+            s += util::format(_config.offsets[i]);
         }
         Logger::log(LogLevel::Info, "Offsets: " + s);
     }
@@ -461,10 +461,7 @@ int runPollard()
 
     try {
         PollardEngine engine(resultCallback, _config.windowSize, _config.offsets);
-
-        for(const auto &off : _config.offsets) {
-            engine.runTameWalk(off, _config.tames);
-        }
+        engine.runTameWalk(secp256k1::uint256(0), _config.tames);
 
         if(_config.wilds > 0) {
             secp256k1::ecpoint g = secp256k1::G();
@@ -676,9 +673,9 @@ int main(int argc, char **argv)
                     item = util::trim(item);
                     if(item.length() > 0) {
                         try {
-                            _config.offsets.push_back(secp256k1::uint256(item));
+                            _config.offsets.push_back(util::parseUInt32(item));
                         } catch(...) {
-                            throw std::string("invalid argument: expected hex string");
+                            throw std::string("invalid argument: expected integer");
                         }
                     }
                 }
