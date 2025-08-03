@@ -115,34 +115,31 @@ Use the `-b,` `-t` and `-p` options to specify the number of blocks, threads per
 xxBitCrack.exe -b 32 -t 256 -p 16 1FshYsUh3mqgsG29XpZ23eLjWV8Ur3VwH
 ```
 
-#### Pollard Rho switches
+#### Pollard Rho/CRT
 
-BitCrack also supports Pollard's rho style searches for the discrete
-logarithm problem.  The feature is enabled with the `--pollard` family of
-switches:
-
-```
---pollard DP_BITS[:WALKS][:SEED]
-    Enable Pollard's rho using distinguished points. `DP_BITS` controls how
-    many leading zero bits mark a distinguished point. `WALKS` sets the number
-    of parallel walks (default 1) and `SEED` provides an optional starting
-    seed.
-
---pollard-write FILE
-    Write distinguished points and checkpoint data to `FILE` so a search can be
-    resumed later.
-```
-
-Example:
+BitCrack includes an experimental Pollard Rho implementation that collects
+bit windows during random walks and reconstructs private keys using the
+Chinese Remainder Theorem (CRT).  The CPU-only feature is enabled with the
+following options:
 
 ```
-xxBitCrack.exe --pollard 24:1024 --pollard-write dp.txt 1FshYsUh3mqgsG29XpZ23eLjWV8Ur3VwH
+--pollard              Enable the Pollard Rho/CRT mode
+--offsets LIST         Comma-separated bit offsets for CRT windows (required)
+--window-size N        Number of bits in each window (default 8)
+--tames N              Steps for tame kangaroo walks (0 disables)
+--wilds N              Steps for wild kangaroo walks (0 disables)
 ```
 
-Pollard mode relies on elliptic-curve backends.  When BitCrack is built with
-the optimized `secp256k1` backend (see `secp256k1lib/`), the rho algorithm uses
-that implementation.  Otherwise, it falls back to the pure C++ ECDSA routines in
-`CryptoUtil/`, which do not require libsecp256k1 but are slower.
+The union of all windows must cover 256 bits for a full reconstruction.
+Tame and wild walks run purely on the CPU and are currently best suited for
+small demonstrations or research.
+
+Minimal example:
+
+```
+xxBitCrack.exe --pollard --offsets 0,64,128,192 --window-size 64 \
+              --tames 100000 --wilds 100000 1FshYsUh3mqgsG29XpZ23eLjWV8Ur3VwH
+```
 
 ### Choosing the right parameters for your device
 
