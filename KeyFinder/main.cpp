@@ -12,6 +12,7 @@
 #include "ConfigFile.h"
 
 #include "DeviceManager.h"
+#include "PollardEngine.h"
 
 #ifdef BUILD_CUDA
 #include "CudaKeySearchDevice.h"
@@ -456,8 +457,23 @@ int runPollard()
     Logger::log(LogLevel::Info, "Tames: " + util::format(_config.tames));
     Logger::log(LogLevel::Info, "Wilds: " + util::format(_config.wilds));
 
-    // Pollard algorithm not yet implemented; fall back to brute force
-    return runBruteForce();
+    try {
+        PollardEngine engine(resultCallback, _config.windowSize, _config.offsets);
+
+        for(const auto &off : _config.offsets) {
+            engine.runTameWalk(off, _config.tames);
+        }
+
+        if(_config.wilds > 0) {
+            secp256k1::ecpoint g = secp256k1::G();
+            engine.runWildWalk(g, _config.wilds);
+        }
+    } catch(const std::exception &ex) {
+        Logger::log(LogLevel::Error, std::string("Pollard error: ") + ex.what());
+        return 1;
+    }
+
+    return 0;
 }
 
 int run()
