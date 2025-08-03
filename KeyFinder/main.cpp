@@ -12,6 +12,7 @@
 #include "ConfigFile.h"
 
 #include "DeviceManager.h"
+#include "PollardEngine.h"
 
 #ifdef BUILD_CUDA
 #include "CudaKeySearchDevice.h"
@@ -457,19 +458,21 @@ int runPollard()
     Logger::log(LogLevel::Info, "Tames: " + util::format(_config.tames));
     Logger::log(LogLevel::Info, "Wilds: " + util::format(_config.wilds));
 
-    PollardEngine engine(resultCallback);
 
-    uint64_t steps = (_config.windowSize == 0) ? 1 : _config.windowSize;
+    try {
+        PollardEngine engine(resultCallback, _config.windowSize, _config.offsets);
 
-    for(uint32_t i = 0; i < _config.tames; ++i) {
-        secp256k1::uint256 start = (i < _config.offsets.size()) ? _config.offsets[i] : secp256k1::uint256(i + 1);
-        engine.runTameWalk(start, steps);
-    }
+        for(const auto &off : _config.offsets) {
+            engine.runTameWalk(off, _config.tames);
+        }
 
-    for(uint32_t i = 0; i < _config.wilds; ++i) {
-        secp256k1::uint256 priv = (i < _config.offsets.size()) ? _config.offsets[i] : secp256k1::uint256(i + 1);
-        secp256k1::ecpoint pub = secp256k1::multiplyPoint(priv, secp256k1::G());
-        engine.runWildWalk(pub, steps);
+        if(_config.wilds > 0) {
+            secp256k1::ecpoint g = secp256k1::G();
+            engine.runWildWalk(g, _config.wilds);
+        }
+    } catch(const std::exception &ex) {
+        Logger::log(LogLevel::Error, std::string("Pollard error: ") + ex.what());
+        return 1;
     }
 
     return 0;

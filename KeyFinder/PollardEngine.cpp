@@ -1,11 +1,18 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
 #include <cstring>
-#include <cstdint>
+#include <vector>
+
 
 using namespace secp256k1;
 
-PollardEngine::PollardEngine(ResultCallback cb) : _callback(cb) {
+PollardEngine::PollardEngine(ResultCallback cb,
+                             unsigned int windowBits,
+                             const std::vector<uint256> &offsets)
+    : _callback(cb), _windowBits(windowBits) {
+    for(const uint256 &o : offsets) {
+        addConstraint(windowBits, o);
+    }
 }
 
 void PollardEngine::addConstraint(unsigned int bits, const uint256 &value) {
@@ -35,8 +42,8 @@ bool PollardEngine::reconstruct(uint256 &out) {
 }
 
 bool PollardEngine::checkPoint(const ecpoint &p) {
-    // Simple window check: low 16 bits of x are zero
-    return (p.x.v[0] & 0xFFFF) == 0;
+    uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
+    return (p.x.v[0] & mask) == 0;
 }
 
 void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) {
@@ -57,11 +64,12 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
     uint256 k = start;
     ecpoint p = multiplyPoint(k, G());
+    uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
 
     for(uint64_t i = 0; i < steps; ++i) {
         if(checkPoint(p)) {
-            uint256 rem(k.v[0] & 0xFFFF);
-            addConstraint(16, rem);
+            uint256 rem(k.v[0] & mask);
+            addConstraint(_windowBits, rem);
             uint256 priv;
             if(reconstruct(priv)) {
                 enumerateCandidate(priv, multiplyPoint(priv, G()));
@@ -76,11 +84,12 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
 void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
     ecpoint p = start;
     uint256 k(0);
+    uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
 
     for(uint64_t i = 0; i < steps; ++i) {
         if(checkPoint(p)) {
-            uint256 rem(k.v[0] & 0xFFFF);
-            addConstraint(16, rem);
+            uint256 rem(k.v[0] & mask);
+            addConstraint(_windowBits, rem);
             uint256 priv;
             if(reconstruct(priv)) {
                 enumerateCandidate(priv, multiplyPoint(priv, G()));

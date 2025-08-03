@@ -15,7 +15,9 @@ public:
 
     using ResultCallback = std::function<void(KeySearchResult)>;
 
-    explicit PollardEngine(ResultCallback cb);
+    PollardEngine(ResultCallback cb,
+                  unsigned int windowBits,
+                  const std::vector<secp256k1::uint256> &offsets);
 
     // Add a constraint of the form k \equiv value (mod 2^bits)
     void addConstraint(unsigned int bits, const secp256k1::uint256 &value);
@@ -30,6 +32,7 @@ public:
 private:
     std::vector<Constraint> _constraints;
     ResultCallback _callback;
+    unsigned int _windowBits;
 
     bool checkPoint(const secp256k1::ecpoint &p);
     void enumerateCandidate(const secp256k1::uint256 &priv, const secp256k1::ecpoint &pub);
