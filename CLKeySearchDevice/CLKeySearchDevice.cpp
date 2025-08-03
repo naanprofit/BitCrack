@@ -595,35 +595,55 @@ void CLKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t ste
     (void)start;
     _pollardBuffer.clear();
 
-    std::ifstream srcFile("CLKeySearchDevice/clPollard.cl");
-    std::string src((std::istreambuf_iterator<char>(srcFile)), std::istreambuf_iterator<char>());
+    std::ifstream shaFile("clMath/sha256.cl");
+    std::ifstream secpFile("clMath/secp256k1.cl");
+    std::ifstream rmdFile("clMath/ripemd160.cl");
+    std::ifstream pollardFile("CLKeySearchDevice/clPollard.cl");
+
+    std::string sha((std::istreambuf_iterator<char>(shaFile)), std::istreambuf_iterator<char>());
+    std::string secp((std::istreambuf_iterator<char>(secpFile)), std::istreambuf_iterator<char>());
+    std::string rmd((std::istreambuf_iterator<char>(rmdFile)), std::istreambuf_iterator<char>());
+    std::string pollard((std::istreambuf_iterator<char>(pollardFile)), std::istreambuf_iterator<char>());
+
+    std::string src = sha + secp + rmd + pollard;
     cl::CLProgram prog(*_clContext, src.c_str());
     cl_program program = prog.getProgram();
 
     cl_int err = 0;
     cl_kernel kernel = clCreateKernel(program, "pollard_random_walk", &err);
-    cl_mem d_out = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardCLMatch) * steps, NULL, &err);
-    cl_mem d_count = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(cl_uint), NULL, &err);
 
+    size_t global = _threads * _blocks;
+    cl_uint maxOut = static_cast<cl_uint>(steps * global);
+
+    cl_mem d_out = clCreateBuffer(_clContext->getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardCLMatch) * maxOut, NULL, &err);
+    cl_mem d_count = clCreateBuffer(_clContext->getContext(), CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &err);
+    cl_mem d_seeds = clCreateBuffer(_clContext->getContext(), CL_MEM_READ_ONLY, sizeof(cl_ulong) * global, NULL, &err);
+
+    std::vector<cl_ulong> h_seeds(global);
+    for(size_t i = 0; i < global; ++i) {
+        h_seeds[i] = seed + i;
+    }
+
+    cl_uint zero = 0;
     cl_command_queue q = _clContext->getQueue();
+    clEnqueueWriteBuffer(q, d_seeds, CL_TRUE, 0, sizeof(cl_ulong) * global, h_seeds.data(), 0, NULL, NULL);
+    clEnqueueWriteBuffer(q, d_count, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL);
+
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_out);
     clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_count);
-    cl_uint maxOut = static_cast<cl_uint>(steps);
     clSetKernelArg(kernel, 2, sizeof(cl_uint), &maxOut);
-    cl_ulong seedArg = seed;
-    clSetKernelArg(kernel, 3, sizeof(cl_ulong), &seedArg);
+    clSetKernelArg(kernel, 3, sizeof(cl_mem), &d_seeds);
     cl_uint stepsArg = static_cast<cl_uint>(steps);
     clSetKernelArg(kernel, 4, sizeof(cl_uint), &stepsArg);
     cl_uint windowBits = 8;
     clSetKernelArg(kernel, 5, sizeof(cl_uint), &windowBits);
 
-    size_t global = 1;
     clEnqueueNDRangeKernel(q, kernel, 1, NULL, &global, NULL, 0, NULL, NULL);
 
-    std::vector<PollardCLMatch> h_out(steps);
+    std::vector<PollardCLMatch> h_out(maxOut);
     cl_uint h_count = 0;
     clEnqueueReadBuffer(q, d_count, CL_FALSE, 0, sizeof(cl_uint), &h_count, 0, NULL, NULL);
-    clEnqueueReadBuffer(q, d_out, CL_FALSE, 0, sizeof(PollardCLMatch) * steps, h_out.data(), 0, NULL, NULL);
+    clEnqueueReadBuffer(q, d_out, CL_FALSE, 0, sizeof(PollardCLMatch) * maxOut, h_out.data(), 0, NULL, NULL);
     clFinish(q);
 
     for(cl_uint i = 0; i < h_count; ++i) {
@@ -638,6 +658,7 @@ void CLKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t ste
 
     clReleaseMemObject(d_out);
     clReleaseMemObject(d_count);
+    clReleaseMemObject(d_seeds);
     clReleaseKernel(kernel);
 }
 
