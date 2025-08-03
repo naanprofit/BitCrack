@@ -17,10 +17,12 @@
 
 #ifdef BUILD_CUDA
 #include "CudaKeySearchDevice.h"
+#include "CudaPollardDevice.h"
 #endif
 
 #ifdef BUILD_OPENCL
 #include "CLKeySearchDevice.h"
+#include "CLPollardDevice.h"
 #endif
 #include "PollardEngine.h"
 
@@ -518,6 +520,17 @@ int runPollard()
         while(segmentStart.cmp(_config.endKey) <= 0) {
             PollardEngine engine(resultCallback, window, offsets, targetHashes,
                                  _config.pollBatch, _config.pollInterval);
+
+#ifdef BUILD_CUDA
+            if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
+                engine.setDevice(std::make_unique<CudaPollardDevice>(engine, window, offsets, targetHashes));
+            }
+#endif
+#ifdef BUILD_OPENCL
+            if(_devices[_config.device].type == DeviceManager::DeviceType::OpenCL) {
+                engine.setDevice(std::make_unique<CLPollardDevice>(engine, window, offsets, targetHashes));
+            }
+#endif
 
             if(tameSteps > 0) {
                 engine.runTameWalk(segmentStart, tameSteps);
