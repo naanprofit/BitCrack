@@ -8,27 +8,52 @@ struct RefMatch {
     std::array<unsigned int,5> h;
 };
 
+struct RNGState {
+    uint64_t s0;
+    uint64_t s1;
+};
+
+static inline uint64_t xorshift128plus(RNGState &st)
+{
+    uint64_t x = st.s0;
+    uint64_t y = st.s1;
+    st.s0 = y;
+    x ^= x << 23;
+    x ^= x >> 17;
+    x ^= y;
+    x ^= y >> 26;
+    st.s1 = x;
+    return x + y;
+}
+
+static inline uint64_t next_random_step(RNGState &st)
+{
+    const uint64_t ORDER_MINUS_ONE = 0xBFD25E8CD0364140ULL;
+    return (xorshift128plus(st) % ORDER_MINUS_ONE) + 1ULL;
+}
+
+static void fake_hash160(uint64_t k, std::array<unsigned int,5> &h)
+{
+    RNGState st{ k, k ^ 0x9E3779B97F4A7C15ULL };
+    for(int i = 0; i < 5; ++i) {
+        h[i] = static_cast<unsigned int>(xorshift128plus(st));
+    }
+}
+
 static std::vector<RefMatch> referenceWalk(uint64_t seed, unsigned int steps, unsigned int windowBits) {
-    uint64_t state = seed;
+    RNGState rng{ seed ^ 1ULL, seed + 1ULL };
     uint64_t scalar = 0;
+    const uint64_t ORDER = 0xBFD25E8CD0364141ULL;
     uint64_t mask = (windowBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << windowBits) - 1ULL);
     std::vector<RefMatch> out;
     for(unsigned int i = 0; i < steps; ++i) {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        uint64_t step = (state & mask) + 1ULL;
+        uint64_t step = next_random_step(rng);
         scalar += step;
+        scalar %= ORDER;
         if((scalar & mask) == 0ULL) {
-            uint64_t x = scalar;
             RefMatch m;
             m.k = scalar;
-            for(int j = 0; j < 5; ++j) {
-                x ^= x << 13;
-                x ^= x >> 7;
-                x ^= x << 17;
-                m.h[j] = static_cast<unsigned int>(x);
-            }
+            fake_hash160(scalar, m.h);
             out.push_back(m);
         }
     }
@@ -37,15 +62,11 @@ static std::vector<RefMatch> referenceWalk(uint64_t seed, unsigned int steps, un
 
 bool testDeterministicSeed() {
     auto matches = referenceWalk(2ULL, 1000, 8);
-    const uint64_t expectedK[5] = {512ULL, 34304ULL, 42752ULL, 61696ULL, 75520ULL};
-    const unsigned int expectedH[5][5] = {
-        {71860740u, 538972672u, 2657931812u, 555745920u, 708371077u},
-        {519636748u, 1751168514u, 696367086u, 1933610753u, 3973836383u},
-        {3629475406u, 2054266626u, 8060092u, 4057507397u, 2051548745u},
-        {2144907490u, 521238787u, 2486401841u, 2477650311u, 143535012u},
-        {3996443982u, 1651515140u, 2636627514u, 3250143174u, 3456072761u}
+    const uint64_t expectedK[1] = {10820130499599738880ULL};
+    const unsigned int expectedH[1][5] = {
+        {3977112439u, 4030187129u, 4139897143u, 2627728552u, 1044400310u}
     };
-    if(matches.size() != 5) return false;
+    if(matches.size() != 1) return false;
     for(size_t i = 0; i < matches.size(); ++i) {
         if(matches[i].k != expectedK[i]) return false;
         for(int j = 0; j < 5; ++j) {
