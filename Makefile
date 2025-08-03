@@ -112,7 +112,7 @@ dir_addrgen:	dir_cmdparse dir_addressutil dir_secp256k1lib
 dir_clunittest: dir_clutil
 	make --directory CLUnitTests
 
-dir_pollardtests: dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil
+dir_pollardtests: dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil dir_logger
 	make --directory PollardTests
 
 test: dir_pollardtests

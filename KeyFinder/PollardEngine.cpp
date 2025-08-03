@@ -6,7 +6,10 @@
 #include <vector>
 #include <random>
 #include <limits>
+#include <chrono>
 #include "../util/RingBuffer.h"
+#include "../util/util.h"
+#include "../Logger/Logger.h"
 
 using namespace secp256k1;
 
@@ -188,6 +191,61 @@ bool PollardEngine::checkPoint(const ecpoint &p) {
     return (p.x.v[0] & mask) == 0;
 }
 
+void PollardEngine::processWindow(const PollardWindow &w) {
+    _windowsProcessed++;
+    if(w.targetIdx >= _targets.size()) {
+        return;
+    }
+    if(_targets[w.targetIdx].seenOffsets.count(w.offset)) {
+        return;
+    }
+
+    unsigned int modBits = w.offset + w.bits;
+    if(modBits > 256) {
+        return;
+    }
+
+    addConstraint(w.targetIdx, modBits, w.scalarFragment);
+    _targets[w.targetIdx].seenOffsets.insert(w.offset);
+
+    _reconstructionAttempts++;
+    uint256 priv;
+    if(reconstruct(w.targetIdx, priv)) {
+        ecpoint pub = multiplyPoint(priv, G());
+        unsigned int h[5];
+        Hash::hashPublicKeyCompressed(pub, h);
+        bool match = true;
+        for(int i = 0; i < 5; ++i) {
+            if(h[i] != _targets[w.targetIdx].hash[i]) {
+                match = false;
+                break;
+            }
+        }
+        if(match) {
+            _reconstructionSuccess++;
+            if(_callback) {
+                KeySearchResult r;
+                r.privateKey = priv;
+                r.publicKey = pub;
+                r.compressed = true;
+                std::memcpy(r.hash, h, sizeof(h));
+                r.address = Address::fromPublicKey(pub, true);
+                _callback(r);
+            }
+        }
+    }
+
+    if((_windowsProcessed % 1000) == 0) {
+        auto now = std::chrono::steady_clock::now();
+        double secs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _startTime).count() / 1000.0;
+        if(secs > 0) {
+            double rate = static_cast<double>(_windowsProcessed) / secs;
+            Logger::log(LogLevel::Info,
+                        "GPU throughput: " + util::format(static_cast<uint64_t>(rate)) + " windows/s");
+        }
+    }
+}
+
 void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) {
     if(!_callback) {
         return;
@@ -236,6 +294,9 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
         return;
     }
 
+    _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
+    _startTime = std::chrono::steady_clock::now();
+
     _device->startTameWalk(start, steps, seed);
     PollardMatch m;
     while(_device->popResult(m)) {
@@ -259,26 +320,23 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
                     for(int w = 0; w < 8; ++w) {
                         full.v[w] = m.scalar.v[w] & mask.v[w];
                     }
-                    addConstraint(t, modBits, full);
-                    _targets[t].seenOffsets.insert(off);
-
-                    uint256 priv;
-                    if(reconstruct(t, priv)) {
-                        ecpoint pub = multiplyPoint(priv, G());
-                        unsigned int h[5];
-                        Hash::hashPublicKeyCompressed(pub, h);
-                        bool match = true;
-                        for(int w = 0; w < 5; ++w) {
-                            if(h[w] != _targets[t].hash[w]) { match = false; break; }
-                        }
-                        if(match) {
-                            enumerateCandidate(priv, pub);
-                        }
-                    }
+                    PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, full};
+                    processWindow(w);
                 }
             }
         }
     }
+
+    auto end = std::chrono::steady_clock::now();
+    double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end - _startTime).count() / 1000.0;
+    if(secs > 0) {
+        double rate = static_cast<double>(_windowsProcessed) / secs;
+        Logger::log(LogLevel::Info,
+                    "GPU throughput: " + util::format(static_cast<uint64_t>(rate)) + " windows/s");
+    }
+    Logger::log(LogLevel::Info,
+                "CPU reconstructions: " + util::format(_reconstructionSuccess) + "/" +
+                util::format(_reconstructionAttempts));
 }
 
 void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
@@ -289,6 +347,9 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t s
     if(!_device) {
         return;
     }
+
+    _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
+    _startTime = std::chrono::steady_clock::now();
 
     _device->startWildWalk(start, steps, seed);
     PollardMatch m;
@@ -313,26 +374,23 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t s
                     for(int w = 0; w < 8; ++w) {
                         full.v[w] = m.scalar.v[w] & mask.v[w];
                     }
-                    addConstraint(t, modBits, full);
-                    _targets[t].seenOffsets.insert(off);
-
-                    uint256 priv;
-                    if(reconstruct(t, priv)) {
-                        ecpoint pub = multiplyPoint(priv, G());
-                        unsigned int h[5];
-                        Hash::hashPublicKeyCompressed(pub, h);
-                        bool match = true;
-                        for(int w = 0; w < 5; ++w) {
-                            if(h[w] != _targets[t].hash[w]) { match = false; break; }
-                        }
-                        if(match) {
-                            enumerateCandidate(priv, pub);
-                        }
-                    }
+                    PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, full};
+                    processWindow(w);
                 }
             }
         }
     }
+
+    auto end = std::chrono::steady_clock::now();
+    double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end - _startTime).count() / 1000.0;
+    if(secs > 0) {
+        double rate = static_cast<double>(_windowsProcessed) / secs;
+        Logger::log(LogLevel::Info,
+                    "GPU throughput: " + util::format(static_cast<uint64_t>(rate)) + " windows/s");
+    }
+    Logger::log(LogLevel::Info,
+                "CPU reconstructions: " + util::format(_reconstructionSuccess) + "/" +
+                util::format(_reconstructionAttempts));
 }
 
 uint64_t PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
