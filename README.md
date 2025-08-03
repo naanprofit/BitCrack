@@ -115,6 +115,35 @@ Use the `-b,` `-t` and `-p` options to specify the number of blocks, threads per
 xxBitCrack.exe -b 32 -t 256 -p 16 1FshYsUh3mqgsG29XpZ23eLjWV8Ur3VwH
 ```
 
+#### Pollard Rho switches
+
+BitCrack also supports Pollard's rho style searches for the discrete
+logarithm problem.  The feature is enabled with the `--pollard` family of
+switches:
+
+```
+--pollard DP_BITS[:WALKS][:SEED]
+    Enable Pollard's rho using distinguished points. `DP_BITS` controls how
+    many leading zero bits mark a distinguished point. `WALKS` sets the number
+    of parallel walks (default 1) and `SEED` provides an optional starting
+    seed.
+
+--pollard-write FILE
+    Write distinguished points and checkpoint data to `FILE` so a search can be
+    resumed later.
+```
+
+Example:
+
+```
+xxBitCrack.exe --pollard 24:1024 --pollard-write dp.txt 1FshYsUh3mqgsG29XpZ23eLjWV8Ur3VwH
+```
+
+Pollard mode relies on elliptic-curve backends.  When BitCrack is built with
+the optimized `secp256k1` backend (see `secp256k1lib/`), the rho algorithm uses
+that implementation.  Otherwise, it falls back to the pure C++ ECDSA routines in
+`CryptoUtil/`, which do not require libsecp256k1 but are slower.
+
 ### Choosing the right parameters for your device
 
 GPUs have many cores. Work for the cores is divided into blocks. Each block contains threads.
