@@ -224,11 +224,11 @@ void usage()
     printf("--stride N              Increment by N keys at a time\n");
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
-    printf("--pollard              Enable Pollard's kangaroo mode\n");
-    printf("--offsets LIST         Comma-separated list of Pollard offsets\n");
-    printf("--window-size N        Window size for Pollard walk\n");
-    printf("--tames N              Number of tame kangaroos\n");
-    printf("--wilds N              Number of wild kangaroos\n");
+    printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
+    printf("--offsets LIST         Comma-separated bit offsets for CRT windows (required)\n");
+    printf("--window-size N        Bits per window (default 8)\n");
+    printf("--tames N              Tame walk steps (0 disables)\n");
+    printf("--wilds N              Wild walk steps (0 disables)\n");
 }
 
 
