@@ -14,7 +14,10 @@ struct CudaPollardMatch {
 extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
                                               unsigned int *outCount,
                                               unsigned int maxOut,
-                                              unsigned long long seed,
+                                              const unsigned long long *seeds,
+                                              const unsigned long long *starts,
+                                              const unsigned int *startX,
+                                              const unsigned int *startY,
                                               unsigned int steps,
                                               unsigned int windowBits);
 
@@ -336,14 +339,24 @@ void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t s
 
     CudaPollardMatch *d_out = nullptr;
     unsigned int *d_count = nullptr;
+    unsigned long long *d_seeds = nullptr;
+    unsigned long long *d_starts = nullptr;
     cudaStream_t stream;
     cudaCall(cudaStreamCreate(&stream));
     cudaCall(cudaMalloc(&d_out, sizeof(CudaPollardMatch) * steps));
     cudaCall(cudaMalloc(&d_count, sizeof(unsigned int)));
+    cudaCall(cudaMalloc(&d_seeds, sizeof(unsigned long long)));
+    cudaCall(cudaMalloc(&d_starts, sizeof(unsigned long long)));
+
+    unsigned long long h_seed = seed;
+    unsigned long long h_start = 0ULL;
+    cudaCall(cudaMemcpy(d_seeds, &h_seed, sizeof(unsigned long long), cudaMemcpyHostToDevice));
+    cudaCall(cudaMemcpy(d_starts, &h_start, sizeof(unsigned long long), cudaMemcpyHostToDevice));
 
     pollardRandomWalk<<<1, 1, 0, stream>>>(d_out, d_count,
                                            static_cast<unsigned int>(steps),
-                                           seed,
+                                           d_seeds, d_starts,
+                                           nullptr, nullptr,
                                            static_cast<unsigned int>(steps),
                                            8u);
 
@@ -365,6 +378,8 @@ void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t s
 
     cudaCall(cudaFree(d_out));
     cudaCall(cudaFree(d_count));
+    cudaCall(cudaFree(d_seeds));
+    cudaCall(cudaFree(d_starts));
     cudaCall(cudaStreamDestroy(stream));
 }
 

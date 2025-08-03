@@ -164,53 +164,59 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
 extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
                                               unsigned int *outCount,
                                               unsigned int maxOut,
-                                              unsigned long long seed,
+                                              const unsigned long long *seeds,
+                                              const unsigned long long *starts,
+                                              const unsigned int *startX,
+                                              const unsigned int *startY,
                                               unsigned int steps,
                                               unsigned int windowBits)
 {
-    if(threadIdx.x == 0 && blockIdx.x == 0) {
-        RNGState rng{ seed ^ 1ULL, seed + 1ULL };
-        unsigned long long scalar = 0ULL;
-        const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
-        unsigned long long mask = (windowBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << windowBits) - 1ULL);
-        unsigned int count = 0;
-        unsigned int px[8];
-        unsigned int py[8];
-        setPointInfinity(px, py);
-        for(unsigned int i = 0; i < steps && count < maxOut; i++) {
-            unsigned long long step = next_random_step(rng);
-            scalar += step;
-            scalar %= ORDER;
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
+    unsigned long long scalar = starts[tid];
+    const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
+    unsigned long long mask = (windowBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << windowBits) - 1ULL);
+    unsigned int px[8];
+    unsigned int py[8];
 
-            unsigned int sx[8];
-            unsigned int sy[8];
-            scalarMultiplyBase(step, sx, sy);
-            if(isInfinity(px)) {
-                copyBigInt(sx, px);
-                copyBigInt(sy, py);
-            } else {
-                unsigned int tx[8];
-                unsigned int ty[8];
-                pointAdd(px, py, sx, sy, tx, ty);
-                copyBigInt(tx, px);
-                copyBigInt(ty, py);
-            }
+    if(startX && startY) {
+        for(int i = 0; i < 8; ++i) {
+            px[i] = startX[tid * 8 + i];
+            py[i] = startY[tid * 8 + i];
+        }
+    } else {
+        scalarMultiplyBase(scalar, px, py);
+    }
 
-            if((scalar & mask) == 0ULL) {
-                unsigned int digest[5];
-                unsigned int finalHash[5];
-                hashPublicKeyCompressed(px, py[7], digest);
-                doRMD160FinalRound(digest, finalHash);
+    for(unsigned int i = 0; i < steps; ++i) {
+        unsigned long long step = next_random_step(rng);
+        scalar += step;
+        scalar %= ORDER;
+
+        unsigned int sx[8];
+        unsigned int sy[8];
+        scalarMultiplyBase(step, sx, sy);
+        unsigned int tx[8];
+        unsigned int ty[8];
+        pointAdd(px, py, sx, sy, tx, ty);
+        copyBigInt(tx, px);
+        copyBigInt(ty, py);
+
+        if((scalar & mask) == 0ULL) {
+            unsigned int digest[5];
+            unsigned int finalHash[5];
+            hashPublicKeyCompressed(px, py[7], digest);
+            doRMD160FinalRound(digest, finalHash);
+            unsigned int idx = atomicAdd(outCount, 1u);
+            if(idx < maxOut) {
                 for(int w = 0; w < 5; w++) {
-                    out[count].hash[w] = finalHash[w];
+                    out[idx].hash[w] = finalHash[w];
                 }
-                out[count].k[0] = scalar & 0xffffffffULL;
-                out[count].k[1] = scalar >> 32;
-                out[count].k[2] = 0ULL;
-                out[count].k[3] = 0ULL;
-                count++;
+                out[idx].k[0] = scalar & 0xffffffffULL;
+                out[idx].k[1] = scalar >> 32;
+                out[idx].k[2] = 0ULL;
+                out[idx].k[3] = 0ULL;
             }
         }
-        *outCount = count;
     }
 }
