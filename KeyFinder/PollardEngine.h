@@ -7,6 +7,7 @@
 #include <array>
 #include <set>
 #include <memory>
+#include <chrono>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"
@@ -16,6 +17,9 @@ public:
     virtual ~PollardDevice() {}
     virtual void startTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed) = 0;
     virtual void startWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed) = 0;
+    // CPU implementations may still emit ``PollardMatch`` results which are
+    // converted to ``PollardWindow`` objects by the engine.  GPU
+    // implementations can enqueue ``PollardWindow`` structures directly.
     virtual bool popResult(PollardMatch &out) = 0;
 };
 
@@ -53,6 +57,12 @@ public:
     // power-of-two moduli.
     bool reconstruct(size_t target, secp256k1::uint256 &out);
 
+    // Consume a window result produced by a GPU kernel or converted from a
+    // CPU device.  This function accumulates the constraint, attempts key
+    // reconstruction and, on success, hashes the candidate to verify it
+    // belongs to the supplied target set before invoking the callback.
+    void processWindow(const PollardWindow &w);
+
     // Walk routines consume results produced by the configured device.  The
     // overloads with a seed parameter enable deterministic behaviour for
     // testing and for GPU implementations that require an explicit seed.
@@ -79,6 +89,12 @@ private:
     std::vector<TargetState> _targets;        // state per target hash
 
     std::unique_ptr<PollardDevice> _device;   // producer of walk results
+
+    // Metrics
+    uint64_t _windowsProcessed = 0;           // number of windows consumed
+    uint64_t _reconstructionAttempts = 0;     // number of CRT solves attempted
+    uint64_t _reconstructionSuccess = 0;      // successful reconstructions
+    std::chrono::steady_clock::time_point _startTime; // timing for throughput
 
     bool checkPoint(const secp256k1::ecpoint &p);
     void enumerateCandidate(const secp256k1::uint256 &priv,
