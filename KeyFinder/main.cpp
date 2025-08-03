@@ -20,6 +20,7 @@
 #ifdef BUILD_OPENCL
 #include "CLKeySearchDevice.h"
 #endif
+#include "PollardEngine.h"
 
 typedef struct {
     // startKey is the first key. We store it so that if the --continue
@@ -456,8 +457,22 @@ int runPollard()
     Logger::log(LogLevel::Info, "Tames: " + util::format(_config.tames));
     Logger::log(LogLevel::Info, "Wilds: " + util::format(_config.wilds));
 
-    // Pollard algorithm not yet implemented; fall back to brute force
-    return runBruteForce();
+    PollardEngine engine(resultCallback);
+
+    uint64_t steps = (_config.windowSize == 0) ? 1 : _config.windowSize;
+
+    for(uint32_t i = 0; i < _config.tames; ++i) {
+        secp256k1::uint256 start = (i < _config.offsets.size()) ? _config.offsets[i] : secp256k1::uint256(i + 1);
+        engine.runTameWalk(start, steps);
+    }
+
+    for(uint32_t i = 0; i < _config.wilds; ++i) {
+        secp256k1::uint256 priv = (i < _config.offsets.size()) ? _config.offsets[i] : secp256k1::uint256(i + 1);
+        secp256k1::ecpoint pub = secp256k1::multiplyPoint(priv, secp256k1::G());
+        engine.runWildWalk(pub, steps);
+    }
+
+    return 0;
 }
 
 int run()
