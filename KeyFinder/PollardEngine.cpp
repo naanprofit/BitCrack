@@ -1,6 +1,7 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
 #include <cstring>
+#include <cstdint>
 
 using namespace secp256k1;
 
@@ -17,20 +18,19 @@ bool PollardEngine::reconstruct(uint256 &out) {
         return false;
     }
 
-    out = uint256(0);
-    unsigned int shift = 0;
+    uint256 x(0);
+    uint256 M(1);
 
     for(const Constraint &c : _constraints) {
-        uint256 val = c.value;
-        for(unsigned int i = 0; i < c.bits; ++i) {
-            if(val.bit(i)) {
-                uint256 bitVal = uint256(2).pow(i + shift);
-                out = out.add(bitVal);
-            }
-        }
-        shift += c.bits;
+        uint64_t mod = 1ULL << c.bits;
+        uint64_t rem = c.value.toUint64() & (mod - 1);
+        uint64_t xmod = x.mod(static_cast<uint32_t>(mod)).toUint64();
+        uint64_t diff = (rem + mod - xmod) % mod;
+        x = x.add(M.mul(diff));
+        M = M.mul(mod);
     }
 
+    out = x;
     return true;
 }
 
