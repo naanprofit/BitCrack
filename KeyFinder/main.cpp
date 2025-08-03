@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <array>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -64,9 +65,12 @@ typedef struct {
     uint32_t windowSize = 0;
     uint32_t tames = 0;
     uint32_t wilds = 0;
+    bool full = false;
 }RunConfig;
 
 static RunConfig _config;
+
+static bool _resultFound = false;
 
 std::vector<DeviceManager::DeviceInfo> _devices;
 
@@ -81,14 +85,16 @@ static uint64_t _startTime = 0;
 */
 void resultCallback(KeySearchResult info)
 {
-	if(_config.resultsFile.length() != 0) {
-		Logger::log(LogLevel::Info, "Found key for address '" + info.address + "'. Written to '" + _config.resultsFile + "'");
+        _resultFound = true;
 
-		std::string s = info.address + " " + info.privateKey.toString(16) + " " + info.publicKey.toString(info.compressed);
-		util::appendToFile(_config.resultsFile, s);
+        if(_config.resultsFile.length() != 0) {
+                Logger::log(LogLevel::Info, "Found key for address '" + info.address + "'. Written to '" + _config.resultsFile + "'");
 
-		return;
-	}
+                std::string s = info.address + " " + info.privateKey.toString(16) + " " + info.publicKey.toString(info.compressed);
+                util::appendToFile(_config.resultsFile, s);
+
+                return;
+        }
 
 	std::string logStr = "Address:     " + info.address + "\n";
 	logStr += "Private key: " + info.privateKey.toString(16) + "\n";
@@ -229,6 +235,7 @@ void usage()
     printf("--window-size N        Bits per window (default 8)\n");
     printf("--tames N              Tame walk steps (0 disables)\n");
     printf("--wilds N              Wild walk steps (0 disables)\n");
+    printf("--full                 Process entire keyspace\n");
 }
 
 
@@ -449,6 +456,40 @@ int runPollard()
     uint64_t tameSteps = _config.tames;
     uint64_t wildSteps = _config.wilds;
 
+    std::vector<std::array<unsigned int,5>> targetHashes;
+
+    if(!_config.targetsFile.empty()) {
+        std::ifstream inFile(_config.targetsFile.c_str());
+        if(!inFile.is_open()) {
+            Logger::log(LogLevel::Error, "Unable to open '" + _config.targetsFile + "'");
+            return 1;
+        }
+        std::string line;
+        while(std::getline(inFile, line)) {
+            util::removeNewline(line);
+            line = util::trim(line);
+            if(line.length() > 0) {
+                unsigned int h[5];
+                Base58::toHash160(line, h);
+                std::array<unsigned int,5> arr;
+                for(int i=0;i<5;i++) {
+                    arr[i] = h[i];
+                }
+                targetHashes.push_back(arr);
+            }
+        }
+    } else {
+        for(size_t i=0;i<_config.targets.size();i++) {
+            unsigned int h[5];
+            Base58::toHash160(_config.targets[i], h);
+            std::array<unsigned int,5> arr;
+            for(int j=0;j<5;j++) {
+                arr[j] = h[j];
+            }
+            targetHashes.push_back(arr);
+        }
+    }
+
     if(!offsets.empty()) {
         std::string s;
         for(size_t i = 0; i < offsets.size(); i++) {
@@ -463,15 +504,28 @@ int runPollard()
     Logger::log(LogLevel::Info, "Tame walk steps: " + util::format(tameSteps));
     Logger::log(LogLevel::Info, "Wild walk steps: " + util::format(wildSteps));
 
-    try {
-        PollardEngine engine(resultCallback, window, offsets);
-        if(tameSteps > 0) {
-            engine.runTameWalk(secp256k1::uint256(0), tameSteps);
-        }
+    _resultFound = false;
 
-        if(wildSteps > 0) {
-            secp256k1::ecpoint g = secp256k1::G();
-            engine.runWildWalk(g, wildSteps);
+    secp256k1::uint256 segmentStart = _config.nextKey;
+
+    try {
+        while(segmentStart.cmp(_config.endKey) <= 0) {
+            PollardEngine engine(resultCallback, window, offsets, targetHashes);
+
+            if(tameSteps > 0) {
+                engine.runTameWalk(segmentStart, tameSteps);
+            }
+
+            if(wildSteps > 0) {
+                secp256k1::ecpoint startPoint = secp256k1::multiplyPoint(segmentStart, secp256k1::G());
+                engine.runWildWalk(startPoint, wildSteps);
+            }
+
+            if(_resultFound || !_config.full) {
+                break;
+            }
+
+            segmentStart = segmentStart.add(_config.stride);
         }
     } catch(const std::exception &ex) {
         Logger::log(LogLevel::Error, std::string("Pollard error: ") + ex.what());
@@ -585,6 +639,7 @@ int main(int argc, char **argv)
     parser.add("", "--window-size", true);
     parser.add("", "--tames", true);
     parser.add("", "--wilds", true);
+    parser.add("", "--full", false);
 
     try {
         parser.parse(argc, argv);
@@ -703,6 +758,8 @@ int main(int argc, char **argv)
                 } catch(...) {
                     throw std::string("invalid argument");
                 }
+            } else if(optArg.equals("", "--full")) {
+                _config.full = true;
             }
 
 		} catch(std::string err) {
