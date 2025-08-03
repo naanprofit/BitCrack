@@ -10,9 +10,6 @@ class CudaPollardDevice : public PollardDevice {
     unsigned int _windowBits;
     std::vector<unsigned int> _offsets;
     std::vector<std::array<unsigned int,5>> _targets;
-
-    static secp256k1::uint256 maskBits(unsigned int bits);
-    static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits);
 public:
     CudaPollardDevice(PollardEngine &engine,
                       unsigned int windowBits,

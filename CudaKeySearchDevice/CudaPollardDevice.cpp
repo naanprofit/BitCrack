@@ -5,38 +5,21 @@
 
 using namespace secp256k1;
 
-struct CudaPollardMatch {
-    unsigned long long k[4];
-    unsigned int hash[5];
+struct GpuPollardWindow {
+    unsigned int targetIdx;
+    unsigned int offset;
+    unsigned int bits;
+    unsigned int k[8];
 };
 
-// Each thread runs an independent walk using a unique seed and starting
-// scalar.  Optional starting points can be supplied for wild walks.
-extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
-                                             unsigned int *outCount,
-                                             unsigned int maxOut,
-                                             const unsigned long long *seeds,
-                                             const unsigned long long *starts,
-                                             const unsigned int *startX,
-                                             const unsigned int *startY,
-                                             unsigned int steps,
-                                             unsigned int windowBits);
+struct GpuTargetWindow {
+    unsigned int targetIdx;
+    unsigned int offset;
+    unsigned int bits;
+    unsigned long long target;
+};
 
-CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
-                                     unsigned int windowBits,
-                                     const std::vector<unsigned int> &offsets,
-                                     const std::vector<std::array<unsigned int,5>> &targets)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets) {}
-
-uint256 CudaPollardDevice::maskBits(unsigned int bits) {
-    uint256 m(0);
-    for(unsigned int i = 0; i < bits; ++i) {
-        m.v[i/32] |= (1u << (i % 32));
-    }
-    return m;
-}
-
-uint64_t CudaPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
+static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
     unsigned int word = offset / 32;
     unsigned int bit = offset % 32;
     uint64_t val = 0;
@@ -55,6 +38,25 @@ uint64_t CudaPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int o
     }
     return val;
 }
+
+// Each thread runs an independent walk using a unique seed and starting
+// scalar.  Optional starting points can be supplied for wild walks.
+extern "C" __global__ void pollardRandomWalk(GpuPollardWindow *out,
+                                             unsigned int *outCount,
+                                             unsigned int maxOut,
+                                             const unsigned long long *seeds,
+                                             const unsigned long long *starts,
+                                             const unsigned int *startX,
+                                             const unsigned int *startY,
+                                             unsigned int steps,
+                                             const GpuTargetWindow *windows,
+                                             unsigned int windowCount);
+
+CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
+                                     unsigned int windowBits,
+                                     const std::vector<unsigned int> &offsets,
+                                     const std::vector<std::array<unsigned int,5>> &targets)
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets) {}
 
 void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
     // Determine launch configuration based on device capabilities
@@ -85,10 +87,30 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint
     cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned long long) * totalThreads, cudaMemcpyHostToDevice);
     cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned long long) * totalThreads, cudaMemcpyHostToDevice);
 
-    CudaPollardMatch *d_out = nullptr;
+    // Prepare target windows
+    std::vector<GpuTargetWindow> h_windows;
+    for(size_t t = 0; t < _targets.size(); ++t) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) continue;
+            GpuTargetWindow tw;
+            tw.targetIdx = static_cast<unsigned int>(t);
+            tw.offset = off;
+            tw.bits = _windowBits;
+            tw.target = hashWindowLE(_targets[t].data(), off, _windowBits);
+            h_windows.push_back(tw);
+        }
+    }
+    unsigned int windowCount = static_cast<unsigned int>(h_windows.size());
+    GpuTargetWindow *d_windows = nullptr;
+    if(windowCount > 0) {
+        cudaMalloc(&d_windows, sizeof(GpuTargetWindow) * windowCount);
+        cudaMemcpy(d_windows, h_windows.data(), sizeof(GpuTargetWindow) * windowCount, cudaMemcpyHostToDevice);
+    }
+
+    GpuPollardWindow *d_out = nullptr;
     unsigned int *d_count = nullptr;
     unsigned int maxOut = static_cast<unsigned int>(steps * totalThreads);
-    cudaMalloc(&d_out, sizeof(CudaPollardMatch) * maxOut);
+    cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut);
     cudaMalloc(&d_count, sizeof(unsigned int));
     cudaMemset(d_count, 0, sizeof(unsigned int));
 
@@ -98,46 +120,31 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint
                                                              d_seeds, d_starts,
                                                              nullptr, nullptr,
                                                              static_cast<unsigned int>(steps),
-                                                             _windowBits);
+                                                             d_windows, windowCount);
 
-    std::vector<CudaPollardMatch> h_out(maxOut);
+    std::vector<GpuPollardWindow> h_out(maxOut);
     unsigned int h_count = 0;
     cudaMemcpyAsync(&h_count, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream);
-    cudaMemcpyAsync(h_out.data(), d_out, sizeof(CudaPollardMatch) * maxOut, cudaMemcpyDeviceToHost, stream);
+    cudaMemcpyAsync(h_out.data(), d_out, sizeof(GpuPollardWindow) * maxOut, cudaMemcpyDeviceToHost, stream);
     cudaStreamSynchronize(stream);
 
     unsigned int count = (h_count > maxOut) ? maxOut : h_count;
     for(unsigned int i = 0; i < count; ++i) {
-        PollardMatch m;
-        for(int j = 0; j < 4; ++j) {
-            m.scalar.v[j*2]     = static_cast<unsigned int>(h_out[i].k[j] & 0xffffffffULL);
-            m.scalar.v[j*2 + 1] = static_cast<unsigned int>(h_out[i].k[j] >> 32);
+        PollardWindow w;
+        w.targetIdx = h_out[i].targetIdx;
+        w.offset = h_out[i].offset;
+        w.bits = h_out[i].bits;
+        for(int j = 0; j < 8; ++j) {
+            w.scalarFragment.v[j] = h_out[i].k[j];
         }
-        std::memcpy(m.hash, h_out[i].hash, sizeof(m.hash));
-        for(size_t t = 0; t < _targets.size(); ++t) {
-            for(unsigned int off : _offsets) {
-                if(off + _windowBits > 160) continue;
-                uint64_t want = hashWindowLE(_targets[t].data(), off, _windowBits);
-                uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
-                if(got == want) {
-                    unsigned int modBits = off + _windowBits;
-                    if(modBits > 256) continue;
-                    uint256 mask = maskBits(modBits);
-                    uint256 frag;
-                    for(int w = 0; w < 8; ++w) {
-                        frag.v[w] = m.scalar.v[w] & mask.v[w];
-                    }
-                    PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, frag};
-                    _engine.processWindow(w);
-                }
-            }
-        }
+        _engine.processWindow(w);
     }
 
     cudaFree(d_out);
     cudaFree(d_count);
     cudaFree(d_seeds);
     cudaFree(d_starts);
+    if(d_windows) cudaFree(d_windows);
     cudaStreamDestroy(stream);
 }
 
@@ -182,10 +189,30 @@ void CudaPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint
     cudaMemcpy(d_startX, h_startX.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_startY, h_startY.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
 
-    CudaPollardMatch *d_out = nullptr;
+    // Prepare target windows
+    std::vector<GpuTargetWindow> h_windows;
+    for(size_t t = 0; t < _targets.size(); ++t) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) continue;
+            GpuTargetWindow tw;
+            tw.targetIdx = static_cast<unsigned int>(t);
+            tw.offset = off;
+            tw.bits = _windowBits;
+            tw.target = hashWindowLE(_targets[t].data(), off, _windowBits);
+            h_windows.push_back(tw);
+        }
+    }
+    unsigned int windowCount = static_cast<unsigned int>(h_windows.size());
+    GpuTargetWindow *d_windows = nullptr;
+    if(windowCount > 0) {
+        cudaMalloc(&d_windows, sizeof(GpuTargetWindow) * windowCount);
+        cudaMemcpy(d_windows, h_windows.data(), sizeof(GpuTargetWindow) * windowCount, cudaMemcpyHostToDevice);
+    }
+
+    GpuPollardWindow *d_out = nullptr;
     unsigned int *d_count = nullptr;
     unsigned int maxOut = static_cast<unsigned int>(steps * totalThreads);
-    cudaMalloc(&d_out, sizeof(CudaPollardMatch) * maxOut);
+    cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut);
     cudaMalloc(&d_count, sizeof(unsigned int));
     cudaMemset(d_count, 0, sizeof(unsigned int));
 
@@ -195,40 +222,24 @@ void CudaPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint
                                                              d_seeds, d_starts,
                                                              d_startX, d_startY,
                                                              static_cast<unsigned int>(steps),
-                                                             _windowBits);
+                                                             d_windows, windowCount);
 
-    std::vector<CudaPollardMatch> h_out(maxOut);
+    std::vector<GpuPollardWindow> h_out(maxOut);
     unsigned int h_count = 0;
     cudaMemcpyAsync(&h_count, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream);
-    cudaMemcpyAsync(h_out.data(), d_out, sizeof(CudaPollardMatch) * maxOut, cudaMemcpyDeviceToHost, stream);
+    cudaMemcpyAsync(h_out.data(), d_out, sizeof(GpuPollardWindow) * maxOut, cudaMemcpyDeviceToHost, stream);
     cudaStreamSynchronize(stream);
 
     unsigned int count = (h_count > maxOut) ? maxOut : h_count;
     for(unsigned int i = 0; i < count; ++i) {
-        PollardMatch m;
-        for(int j = 0; j < 4; ++j) {
-            m.scalar.v[j*2]     = static_cast<unsigned int>(h_out[i].k[j] & 0xffffffffULL);
-            m.scalar.v[j*2 + 1] = static_cast<unsigned int>(h_out[i].k[j] >> 32);
+        PollardWindow w;
+        w.targetIdx = h_out[i].targetIdx;
+        w.offset = h_out[i].offset;
+        w.bits = h_out[i].bits;
+        for(int j = 0; j < 8; ++j) {
+            w.scalarFragment.v[j] = h_out[i].k[j];
         }
-        std::memcpy(m.hash, h_out[i].hash, sizeof(m.hash));
-        for(size_t t = 0; t < _targets.size(); ++t) {
-            for(unsigned int off : _offsets) {
-                if(off + _windowBits > 160) continue;
-                uint64_t want = hashWindowLE(_targets[t].data(), off, _windowBits);
-                uint64_t got  = hashWindowLE(m.hash, off, _windowBits);
-                if(got == want) {
-                    unsigned int modBits = off + _windowBits;
-                    if(modBits > 256) continue;
-                    uint256 mask = maskBits(modBits);
-                    uint256 frag;
-                    for(int w = 0; w < 8; ++w) {
-                        frag.v[w] = m.scalar.v[w] & mask.v[w];
-                    }
-                    PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, frag};
-                    _engine.processWindow(w);
-                }
-            }
-        }
+        _engine.processWindow(w);
     }
 
     cudaFree(d_out);
@@ -237,5 +248,6 @@ void CudaPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint
     cudaFree(d_starts);
     cudaFree(d_startX);
     cudaFree(d_startY);
+    if(d_windows) cudaFree(d_windows);
     cudaStreamDestroy(stream);
 }
