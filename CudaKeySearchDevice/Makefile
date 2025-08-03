@@ -8,11 +8,11 @@ all:    cuda
 
 cuda:
 ;for file in ${CPPSRC} ; do\
-;;${NVCC} -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE};\
+;   ${NVCC} -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE};\
 ;done
 
 ;for file in ${CUSRC} ; do\
-;;${NVCC} -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;   ${NVCC} -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
 ;${NVCC} -dlink -o cuda_libs.o *.o -lcudadevrt -lcudart
