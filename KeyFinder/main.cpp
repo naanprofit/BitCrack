@@ -521,11 +521,16 @@ int runPollard()
                 engine.runWildWalk(startPoint, wildSteps);
             }
 
-            if(_resultFound || !_config.full) {
+            if(_resultFound) {
                 break;
             }
 
             segmentStart = segmentStart.add(_config.stride);
+            _config.nextKey = segmentStart;
+
+            if(!_config.full) {
+                break;
+            }
         }
     } catch(const std::exception &ex) {
         Logger::log(LogLevel::Error, std::string("Pollard error: ") + ex.what());
