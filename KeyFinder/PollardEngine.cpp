@@ -119,13 +119,37 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
     if(!_callback) {
         return;
     }
+    // Compute the candidate's hash160 and ensure it matches one of the
+    // supplied targets before invoking the callback.  This avoids reporting
+    // non-matching candidates that may appear during the walk.
+    unsigned int digest[5];
+    Hash::hashPublicKeyCompressed(pub, digest);
+
+    bool match = false;
+    for(const auto &t : _targets) {
+        bool same = true;
+        for(int i = 0; i < 5; ++i) {
+            if(digest[i] != t.hash[i]) {
+                same = false;
+                break;
+            }
+        }
+        if(same) {
+            match = true;
+            break;
+        }
+    }
+
+    if(!match) {
+        return; // Candidate does not belong to the target set
+    }
 
     KeySearchResult r;
     r.privateKey = priv;
     r.publicKey = pub;
     r.compressed = true;
-    std::memset(r.hash, 0, sizeof(r.hash));
-    r.address = "";
+    std::memcpy(r.hash, digest, sizeof(r.hash));
+    r.address = Address::fromPublicKey(pub, true);
 
     _callback(r);
 }
