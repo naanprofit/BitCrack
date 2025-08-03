@@ -21,6 +21,7 @@
 #ifdef BUILD_OPENCL
 #include "CLKeySearchDevice.h"
 #endif
+#include "PollardEngine.h"
 
 typedef struct {
     // startKey is the first key. We store it so that if the --continue
@@ -456,6 +457,7 @@ int runPollard()
     Logger::log(LogLevel::Info, "Window size: " + util::format(_config.windowSize));
     Logger::log(LogLevel::Info, "Tames: " + util::format(_config.tames));
     Logger::log(LogLevel::Info, "Wilds: " + util::format(_config.wilds));
+
 
     try {
         PollardEngine engine(resultCallback, _config.windowSize, _config.offsets);
