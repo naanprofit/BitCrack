@@ -23,11 +23,12 @@ namespace Base58 {
 namespace Hash {
 
 
-	void hashPublicKey(const secp256k1::ecpoint &p, unsigned int *digest);
-	void hashPublicKeyCompressed(const secp256k1::ecpoint &p, unsigned int *digest);
+        void hashPublicKey(const secp256k1::ecpoint &p, unsigned int *digest);
+        void hashPublicKeyCompressed(const secp256k1::ecpoint &p, unsigned int *digest);
 
-	void hashPublicKey(const unsigned int *x, const unsigned int *y, unsigned int *digest);
-	void hashPublicKeyCompressed(const unsigned int *x, const unsigned int *y, unsigned int *digest);
+        void hashPublicKey(const unsigned int *x, const unsigned int *y, unsigned int *digest);
+        void hashPublicKeyCompressed(const unsigned int *x, const unsigned int *y, unsigned int *digest);
+        void hashPublicKeyCompressed(const unsigned char *key, unsigned int *digest);
 
 };
 

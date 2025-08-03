@@ -184,5 +184,41 @@ void Hash::hashPublicKeyCompressed(const unsigned int *x, const unsigned int *y,
 	msg[14] = 256;
 	msg[15] = 0;
 
-	crypto::ripemd160(msg, digest);
+        crypto::ripemd160(msg, digest);
+}
+
+void Hash::hashPublicKeyCompressed(const unsigned char *key, unsigned int *digest)
+{
+        unsigned int msg[16] = {0};
+        unsigned int sha256Digest[8];
+
+        // Copy 33-byte compressed key into message buffer for SHA-256
+        for(int i = 0; i < 8; ++i) {
+                msg[i] = ((unsigned int)key[i * 4] << 24) |
+                         ((unsigned int)key[i * 4 + 1] << 16) |
+                         ((unsigned int)key[i * 4 + 2] << 8) |
+                         (unsigned int)key[i * 4 + 3];
+        }
+
+        // Last byte followed by padding and message length
+        msg[8] = ((unsigned int)key[32] << 24) | 0x00800000;
+        msg[15] = 33 * 8;
+
+        crypto::sha256Init(sha256Digest);
+        crypto::sha256(msg, sha256Digest);
+
+        // Prepare RIPEMD160 input
+        for(int i = 0; i < 16; ++i) {
+                msg[i] = 0;
+        }
+
+        for(int i = 0; i < 8; ++i) {
+                msg[i] = endian(sha256Digest[i]);
+        }
+
+        msg[8] = 0x00000080;
+        msg[14] = 256;
+        msg[15] = 0;
+
+        crypto::ripemd160(msg, digest);
 }
