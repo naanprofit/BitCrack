@@ -11,7 +11,13 @@ ifeq ($(BUILD_OPENCL),1)
 	mkdir -p $(BINDIR)
 	cp clKeyFinder.bin $(BINDIR)/clBitCrack
 endif
+ifeq ($(CPU),1)
+	${CXX} -o KeyFinder.bin ${CPPSRC} ${INCLUDE} ${CXXFLAGS} ${LIBS} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -llogger -lutil -lcmdparse -pthread
+	mkdir -p $(BINDIR)
+	cp KeyFinder.bin $(BINDIR)/BitCrack
+endif
 
 clean:
 	rm -rf cuKeyFinder.bin
 	rm -rf clKeyFinder.bin
+	rm -rf KeyFinder.bin

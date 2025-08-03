@@ -13,7 +13,9 @@
 #include "Logger.h"
 #include "ConfigFile.h"
 
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
 #include "DeviceManager.h"
+#endif
 #include "PollardEngine.h"
 
 #ifdef BUILD_CUDA
@@ -25,7 +27,6 @@
 #include "CLKeySearchDevice.h"
 #include "CLPollardDevice.h"
 #endif
-#include "PollardEngine.h"
 
 typedef struct {
     // startKey is the first key. We store it so that if the --continue
@@ -77,7 +78,9 @@ static RunConfig _config;
 
 static bool _resultFound = false;
 
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
 std::vector<DeviceManager::DeviceInfo> _devices;
+#endif
 
 void writeCheckpoint(secp256k1::uint256 nextKey);
 
@@ -246,23 +249,24 @@ void usage()
 }
 
 
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
 /**
  Finds default parameters depending on the device
  */
 typedef struct {
-	int threads;
-	int blocks;
-	int pointsPerThread;
+        int threads;
+        int blocks;
+        int pointsPerThread;
 }DeviceParameters;
 
 DeviceParameters getDefaultParameters(const DeviceManager::DeviceInfo &device)
 {
-	DeviceParameters p;
-	p.threads = 256;
+        DeviceParameters p;
+        p.threads = 256;
     p.blocks = 32;
-	p.pointsPerThread = 32;
+        p.pointsPerThread = 32;
 
-	return p;
+        return p;
 }
 
 static KeySearchDevice *getDeviceContext(DeviceManager::DeviceInfo &device, int blocks, int threads, int pointsPerThread)
@@ -292,6 +296,7 @@ static void printDeviceList(const std::vector<DeviceManager::DeviceInfo> &device
         printf("\n");
     }
 }
+#endif
 
 bool readAddressesFromFile(const std::string &fileName, std::vector<std::string> &lines)
 {
@@ -393,7 +398,7 @@ void readCheckpointFile()
 
     _config.totalkeys = (_config.nextKey - _config.startKey).toUint64();
 }
-
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
 int runBruteForce()
 {
     if(_config.device < 0 || _config.device >= _devices.size()) {
@@ -453,6 +458,7 @@ int runBruteForce()
 
     return 0;
 }
+#endif
 
 int runPollard()
 {
@@ -563,10 +569,14 @@ int runPollard()
 
 int run()
 {
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
     if(_config.pollard) {
         return runPollard();
     }
     return runBruteForce();
+#else
+    return runPollard();
+#endif
 }
 
 /**
@@ -623,6 +633,7 @@ int main(int argc, char **argv)
         }
     }
 
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
     // Check for supported devices
     try {
         _devices = DeviceManager::getDevices();
@@ -635,6 +646,7 @@ int main(int argc, char **argv)
         Logger::log(LogLevel::Error, "Error detecting devices: " + ex.msg);
         return 1;
     }
+#endif
 
     // Check for arguments
 	if(argc == 1) {
@@ -808,16 +820,18 @@ int main(int argc, char **argv)
 		}
 	}
 
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
     if(listDevices) {
         printDeviceList(_devices);
         return 0;
     }
 
-	// Verify device exists
-	if(_config.device < 0 || _config.device >= _devices.size()) {
-		Logger::log(LogLevel::Error, "device " + util::format(_config.device) + " does not exist");
-		return 1;
-	}
+        // Verify device exists
+        if(_config.device < 0 || _config.device >= _devices.size()) {
+                Logger::log(LogLevel::Error, "device " + util::format(_config.device) + " does not exist");
+                return 1;
+        }
+#endif
 
 	// Parse operands
 	std::vector<std::string> ops = parser.getOperands();

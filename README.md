@@ -119,8 +119,8 @@ xxBitCrack.exe -b 32 -t 256 -p 16 1FshYsUh3mqgsG29XpZ23eLjWV8Ur3VwH
 
 BitCrack includes an experimental Pollard Rho implementation that collects
 bit windows during random walks and reconstructs private keys using the
-Chinese Remainder Theorem (CRT).  The CPU-only feature is enabled with the
-following options:
+Chinese Remainder Theorem (CRT).  Build the CPU-only components with `make CPU=1`
+or `make cpu`. The feature is enabled with the following options:
 
 ```
 --pollard              Enable the Pollard Rho/CRT mode
@@ -196,6 +196,11 @@ make BUILD_OPENCL=1
 Or build both:
 ```
 make BUILD_CUDA=1 BUILD_OPENCL=1
+```
+
+Build CPU-only Pollard/CRT components:
+```
+make CPU=1
 ```
 
 ### Python Pollard Rho/Kangaroo utility
