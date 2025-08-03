@@ -1,5 +1,6 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
+#include "AddressUtil.h"
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -36,35 +37,70 @@ bool combineCRT(const PollardEngine::Constraint &a,
     out = (a.bits >= b.bits) ? a : b;
     return true;
 }
+
+// Extract ``bits`` bits starting at ``offset`` (LSB order) from a 160-bit
+// little-endian hash represented as five 32-bit words.
+uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset,
+                      unsigned int bits) {
+    unsigned int word = offset / 32;
+    unsigned int bit = offset % 32;
+    uint64_t val = 0;
+    if(word < 5) {
+        val = ((uint64_t)h[word]) >> bit;
+        if(bit + bits > 32 && word + 1 < 5) {
+            val |= ((uint64_t)h[word + 1]) << (32 - bit);
+        }
+        if(bit + bits > 64 && word + 2 < 5) {
+            val |= ((uint64_t)h[word + 2]) << (64 - bit);
+        }
+    }
+    if(bits >= 64) {
+        return val;
+    }
+    return val & (((uint64_t)1 << bits) - 1ULL);
+}
 } // namespace
 
 PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int windowBits,
-                             const std::vector<unsigned int> &offsets)
-    : _callback(cb), _windowBits(windowBits), _offsets(offsets) {}
-
-void PollardEngine::addConstraint(unsigned int bits, const uint256 &value) {
-    Constraint c{bits, value};
-    _constraints.push_back(c);
+                             const std::vector<unsigned int> &offsets,
+                             const std::vector<std::array<unsigned int,5>> &targets)
+    : _callback(cb), _windowBits(windowBits), _offsets(offsets) {
+    for(const auto &t : targets) {
+        TargetState s;
+        s.hash = t;
+        _targets.push_back(s);
+    }
 }
 
-bool PollardEngine::reconstruct(uint256 &out) {
-    if(_constraints.empty()) {
+void PollardEngine::addConstraint(size_t target, unsigned int bits,
+                                  const uint256 &value) {
+    if(target >= _targets.size()) {
+        return;
+    }
+    Constraint c{bits, value};
+    _targets[target].constraints.push_back(c);
+}
+
+bool PollardEngine::reconstruct(size_t target, uint256 &out) {
+    if(target >= _targets.size()) {
+        return false;
+    }
+    auto &vec = _targets[target].constraints;
+    if(vec.empty()) {
         return false;
     }
 
-    // Sort constraints by modulus size.  Since each modulus is a power of two
-    // this is equivalent to sorting by the number of known low bits.
-    std::sort(_constraints.begin(), _constraints.end(),
+    std::vector<Constraint> sorted = vec;
+    std::sort(sorted.begin(), sorted.end(),
               [](const Constraint &a, const Constraint &b) {
                   return a.bits < b.bits;
               });
 
-    Constraint acc = _constraints[0];
-
-    for(size_t i = 1; i < _constraints.size(); ++i) {
+    Constraint acc = sorted[0];
+    for(size_t i = 1; i < sorted.size(); ++i) {
         Constraint combined;
-        if(!combineCRT(acc, _constraints[i], combined)) {
+        if(!combineCRT(acc, sorted[i], combined)) {
             return false;
         }
         acc = combined;
@@ -100,7 +136,9 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
     // Random-step walk beginning at ``start``.  At each distinguished point
-    // windows from the current scalar are recorded and fed to the CRT solver.
+    // the RIPEMD160 hash of the current public key is compared against each
+    // target.  When a window of bits matches, the corresponding scalar window
+    // is recorded for that target.
     std::mt19937_64 rng(seed);
 
     uint64_t maxStep;
@@ -121,22 +159,47 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
         p = addPoints(p, multiplyPoint(stepVal, G()));
 
         if(checkPoint(p)) {
-            for(unsigned int off : _offsets) {
-                unsigned int modBits = off + _windowBits;
-                if(modBits > 256) {
-                    continue;
-                }
-                uint256 mask = maskBits(modBits);
-                uint256 full;
-                for(int w = 0; w < 8; ++w) {
-                    full.v[w] = k.v[w] & mask.v[w];
-                }
-                addConstraint(modBits, full);
-            }
+            unsigned int digest[5];
+            Hash::hashPublicKeyCompressed(p, digest);
 
-            uint256 priv;
-            if(reconstruct(priv)) {
-                enumerateCandidate(priv, multiplyPoint(priv, G()));
+            for(size_t t = 0; t < _targets.size(); ++t) {
+                for(unsigned int off : _offsets) {
+                    if(off + _windowBits > 160) {
+                        continue;
+                    }
+                    if(_targets[t].seenOffsets.count(off)) {
+                        continue;
+                    }
+                    uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
+                    uint64_t got  = hashWindowLE(digest, off, _windowBits);
+                    if(got == want) {
+                        unsigned int modBits = off + _windowBits;
+                        if(modBits > 256) {
+                            continue;
+                        }
+                        uint256 mask = maskBits(modBits);
+                        uint256 full;
+                        for(int w = 0; w < 8; ++w) {
+                            full.v[w] = k.v[w] & mask.v[w];
+                        }
+                        addConstraint(t, modBits, full);
+                        _targets[t].seenOffsets.insert(off);
+
+                        uint256 priv;
+                        if(reconstruct(t, priv)) {
+                            ecpoint pub = multiplyPoint(priv, G());
+                            unsigned int h[5];
+                            Hash::hashPublicKeyCompressed(pub, h);
+                            bool match = true;
+                            for(int w = 0; w < 5; ++w) {
+                                if(h[w] != _targets[t].hash[w]) { match = false; break; }
+                            }
+                            if(match) {
+                                enumerateCandidate(priv, pub);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -149,7 +212,7 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
 void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
     // Wild walk begins from a supplied point and advances by random multiples
     // of G while tracking the corresponding scalar ``k``.  Window constraints
-    // are gathered identically to the tame walk.
+    // are gathered identically to the tame walk using hash comparisons.
     std::mt19937_64 rng(seed);
 
     uint64_t maxStep;
@@ -170,24 +233,54 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t s
         p = addPoints(p, multiplyPoint(stepVal, G()));
 
         if(checkPoint(p)) {
-            for(unsigned int off : _offsets) {
-                unsigned int modBits = off + _windowBits;
-                if(modBits > 256) {
-                    continue;
-                }
-                uint256 mask = maskBits(modBits);
-                uint256 full;
-                for(int w = 0; w < 8; ++w) {
-                    full.v[w] = k.v[w] & mask.v[w];
-                }
-                addConstraint(modBits, full);
-            }
+            unsigned int digest[5];
+            Hash::hashPublicKeyCompressed(p, digest);
 
-            uint256 priv;
-            if(reconstruct(priv)) {
-                enumerateCandidate(priv, multiplyPoint(priv, G()));
+            for(size_t t = 0; t < _targets.size(); ++t) {
+                for(unsigned int off : _offsets) {
+                    if(off + _windowBits > 160) {
+                        continue;
+                    }
+                    if(_targets[t].seenOffsets.count(off)) {
+                        continue;
+                    }
+                    uint64_t want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
+                    uint64_t got  = hashWindowLE(digest, off, _windowBits);
+                    if(got == want) {
+                        unsigned int modBits = off + _windowBits;
+                        if(modBits > 256) {
+                            continue;
+                        }
+                        uint256 mask = maskBits(modBits);
+                        uint256 full;
+                        for(int w = 0; w < 8; ++w) {
+                            full.v[w] = k.v[w] & mask.v[w];
+                        }
+                        addConstraint(t, modBits, full);
+                        _targets[t].seenOffsets.insert(off);
+
+                        uint256 priv;
+                        if(reconstruct(t, priv)) {
+                            ecpoint pub = multiplyPoint(priv, G());
+                            unsigned int h[5];
+                            Hash::hashPublicKeyCompressed(pub, h);
+                            bool match = true;
+                            for(int w = 0; w < 5; ++w) {
+                                if(h[w] != _targets[t].hash[w]) { match = false; break; }
+                            }
+                            if(match) {
+                                enumerateCandidate(priv, pub);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+uint64_t PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
+                                   unsigned int bits) {
+    return hashWindowLE(h, offset, bits);
 }
 

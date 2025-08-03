@@ -4,6 +4,8 @@
 #include <vector>
 #include <functional>
 #include <cstdint>
+#include <array>
+#include <set>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
 
@@ -21,21 +23,25 @@ public:
      *
      * @param cb          Callback invoked for every candidate key recovered.
      * @param windowBits  Size of each bit window collected from a walk.
-     * @param offsets     Bit offsets describing where in the key each window
-     *                    is collected.  The union of these windows is later fed
-     *                    into the Chinese Remainder Theorem (CRT) solver.
+     * @param offsets     Bit offsets (within the hash) describing where each
+     *                    window is collected.
+     * @param targets     RIPEMD160 hashes that the walk is attempting to
+     *                    recover.  Each target maintains its own set of
+     *                    constraints.
      */
     PollardEngine(ResultCallback cb,
                   unsigned int windowBits,
-                  const std::vector<unsigned int> &offsets);
+                  const std::vector<unsigned int> &offsets,
+                  const std::vector<std::array<unsigned int,5>> &targets);
 
-    // Add a constraint of the form k \equiv value (mod 2^bits)
-    void addConstraint(unsigned int bits, const secp256k1::uint256 &value);
+    // Add a constraint of the form k \equiv value (mod 2^bits) for ``target``
+    void addConstraint(size_t target, unsigned int bits,
+                       const secp256k1::uint256 &value);
 
-    // Attempt to reconstruct the private key from accumulated constraints using
-    // a CRT solver capable of combining arbitrarily large power-of-two
-    // moduli.
-    bool reconstruct(secp256k1::uint256 &out);
+    // Attempt to reconstruct the private key for ``target`` from accumulated
+    // constraints using a CRT solver capable of combining arbitrarily large
+    // power-of-two moduli.
+    bool reconstruct(size_t target, secp256k1::uint256 &out);
 
     // CPU based tame and wild walks using random steps.  The overloads with a
     // seed parameter enable deterministic behaviour for testing.
@@ -45,14 +51,23 @@ public:
     void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed);
 
 private:
-    std::vector<Constraint> _constraints;
+    struct TargetState {
+        std::array<unsigned int,5> hash;      // target RIPEMD160
+        std::vector<Constraint> constraints;  // gathered constraints
+        std::set<unsigned int> seenOffsets;   // offsets already collected
+    };
+
     ResultCallback _callback;
     unsigned int _windowBits;                 // number of bits per window
     std::vector<unsigned int> _offsets;       // bit offsets of each window
+    std::vector<TargetState> _targets;        // state per target hash
 
     bool checkPoint(const secp256k1::ecpoint &p);
     void enumerateCandidate(const secp256k1::uint256 &priv,
                             const secp256k1::ecpoint &pub);
+
+    static uint64_t hashWindow(const unsigned int h[5], unsigned int offset,
+                               unsigned int bits);
 };
 
 #endif
