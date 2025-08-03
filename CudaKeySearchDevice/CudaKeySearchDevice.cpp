@@ -4,13 +4,19 @@
 #include "cudabridge.h"
 #include "AddressUtil.h"
 #include <cstring>
+#include <vector>
 
 struct CudaPollardMatch {
     unsigned long long k[4];
     unsigned int hash[5];
 };
 
-extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out, unsigned long long seed);
+extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
+                                              unsigned int *outCount,
+                                              unsigned int maxOut,
+                                              unsigned long long seed,
+                                              unsigned int steps,
+                                              unsigned int windowBits);
 
 void CudaKeySearchDevice::cudaCall(cudaError_t err)
 {
@@ -325,29 +331,40 @@ secp256k1::uint256 CudaKeySearchDevice::getNextKey()
 
 void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed)
 {
-    (void)steps;
+    (void)start;
     _pollardBuffer.clear();
 
     CudaPollardMatch *d_out = nullptr;
+    unsigned int *d_count = nullptr;
     cudaStream_t stream;
     cudaCall(cudaStreamCreate(&stream));
-    cudaCall(cudaMalloc(&d_out, sizeof(CudaPollardMatch)));
+    cudaCall(cudaMalloc(&d_out, sizeof(CudaPollardMatch) * steps));
+    cudaCall(cudaMalloc(&d_count, sizeof(unsigned int)));
 
-    pollardRandomWalk<<<_blocks, _threads, 0, stream>>>(d_out, seed);
+    pollardRandomWalk<<<1, 1, 0, stream>>>(d_out, d_count,
+                                           static_cast<unsigned int>(steps),
+                                           seed,
+                                           static_cast<unsigned int>(steps),
+                                           8u);
 
-    CudaPollardMatch h_out;
-    cudaCall(cudaMemcpyAsync(&h_out, d_out, sizeof(CudaPollardMatch), cudaMemcpyDeviceToHost, stream));
+    unsigned int h_count = 0;
+    std::vector<CudaPollardMatch> h_out(steps);
+    cudaCall(cudaMemcpyAsync(&h_count, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream));
+    cudaCall(cudaMemcpyAsync(h_out.data(), d_out, sizeof(CudaPollardMatch) * steps, cudaMemcpyDeviceToHost, stream));
     cudaCall(cudaStreamSynchronize(stream));
 
-    PollardMatch m;
-    for(int i = 0; i < 4; ++i) {
-        m.scalar.v[i * 2]     = static_cast<unsigned int>(h_out.k[i] & 0xFFFFFFFFULL);
-        m.scalar.v[i * 2 + 1] = static_cast<unsigned int>(h_out.k[i] >> 32);
+    for(unsigned int i = 0; i < h_count; ++i) {
+        PollardMatch m;
+        for(int j = 0; j < 4; ++j) {
+            m.scalar.v[j * 2]     = static_cast<unsigned int>(h_out[i].k[j] & 0xFFFFFFFFULL);
+            m.scalar.v[j * 2 + 1] = static_cast<unsigned int>(h_out[i].k[j] >> 32);
+        }
+        std::memcpy(m.hash, h_out[i].hash, sizeof(m.hash));
+        _pollardBuffer.push(m);
     }
-    std::memcpy(m.hash, h_out.hash, sizeof(m.hash));
-    _pollardBuffer.push(m);
 
     cudaCall(cudaFree(d_out));
+    cudaCall(cudaFree(d_count));
     cudaCall(cudaStreamDestroy(stream));
 }
 
