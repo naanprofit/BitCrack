@@ -4,6 +4,8 @@
 #include "ripemd160.cuh" // RIPEMD160 finalisation
 #include "secp256k1.cuh" // EC point operations
 
+__device__ void hashPublicKeyCompressed(const unsigned int*, unsigned int, unsigned int*);
+
 struct CudaPollardMatch {
     unsigned long long k[4];
     unsigned int hash[5];
