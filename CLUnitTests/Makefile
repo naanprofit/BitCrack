@@ -1,5 +1,6 @@
 NAME=CLUnitTests
-CPPSRC:=$(wildcard *.cpp)
+# Exclude the generated cltest.cpp to avoid duplicate compilation
+CPPSRC:=$(filter-out cltest.cpp,$(wildcard *.cpp))
 
 all:
 	cat ../clMath/secp256k1.cl secp256k1test.cl > cltest.cl
