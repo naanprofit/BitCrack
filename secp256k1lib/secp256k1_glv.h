@@ -13,6 +13,47 @@ struct GLVSplit {
     GLVSplit() : k1(0), k2(0), k1Neg(false), k2Neg(false) {}
 };
 
+/* Lambda value such that (lambda * G.x, G.y) = lambda * G */
+static inline const uint256 &glvLambda()
+{
+    static const unsigned int LAMBDA_WORDS[8] = {
+        0x5363AD4Cu, 0xC05C30E0u, 0xA5261C02u, 0x8812645Au,
+        0x122E22EAu, 0x20816678u, 0xDF02967Cu, 0x1B23BD72u
+    };
+    static const uint256 LAMBDA(LAMBDA_WORDS);
+    return LAMBDA;
+}
+
+/* Beta constant for the x-coordinate endomorphism */
+static inline const uint256 &glvBeta()
+{
+    static const unsigned int BETA_WORDS[8] = {
+        0x7AE96A2Bu, 0x657C0710u, 0x6E64479Eu, 0xAC3434E9u,
+        0x9CF04975u, 0x12F58995u, 0xC1396C28u, 0x719501EEu
+    };
+    static const uint256 BETA(BETA_WORDS);
+    return BETA;
+}
+
+static inline ecpoint glvEndomorphism(const ecpoint &p)
+{
+    uint256 x = multiplyModP(p.x, glvBeta());
+    return ecpoint(x, p.y);
+}
+
+static inline ecpoint glvRecombine(const GLVSplit &s, const ecpoint &p1, const ecpoint &p2)
+{
+    ecpoint r1 = p1;
+    ecpoint r2 = p2;
+    if(s.k1Neg) {
+        r1.y = negModP(r1.y);
+    }
+    if(s.k2Neg) {
+        r2.y = negModP(r2.y);
+    }
+    return addPoints(r1, r2);
+}
+
 /*
  * Split a scalar ``k`` into ``k1`` and ``k2`` using the efficiently
  * computable endomorphism on secp256k1.  The result satisfies

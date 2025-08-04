@@ -292,10 +292,15 @@ __device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int 
         return;
     }
 
+    unsigned int base2x[8];
+    unsigned int base2y[8];
+    copyBigInt(_GX, base2x);
+    copyBigInt(_GY, base2y);
+    mulModP(base2x, _BETA, base2x);
+
     unsigned int r2x[8];
     unsigned int r2y[8];
-    scalarMultiplySmall(_GX, _GY, split.k2, r2x, r2y);
-    mulModP(r2x, _BETA, r2x);
+    scalarMultiplySmall(base2x, base2y, split.k2, r2x, r2y);
     if(split.k2Neg) {
         unsigned int ny[8];
         negModP(r2y, ny);
