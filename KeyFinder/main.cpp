@@ -73,6 +73,7 @@ typedef struct {
     uint32_t pollInterval = 100;
     bool full = false;
     bool deterministic = false;
+    bool debug = false;
 }RunConfig;
 
 static RunConfig _config;
@@ -250,6 +251,7 @@ void usage()
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
     printf("--full                 Process entire keyspace\n");
     printf("--deterministic       Use sequential deterministic walks\n");
+    printf("--debug               Enable verbose Pollard debugging\n");
 }
 
 
@@ -532,16 +534,17 @@ int runPollard()
             PollardEngine engine(resultCallback, window, offsets, targetHashes,
                                  segmentStart, _config.endKey,
                                  _config.pollBatch, _config.pollInterval,
-                                 _config.deterministic);
+                                 _config.deterministic,
+                                 _config.debug);
 
 #ifdef BUILD_CUDA
             if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
-                engine.setDevice(std::unique_ptr<CudaPollardDevice>(new CudaPollardDevice(engine, window, offsets, targetHashes)));
+                engine.setDevice(std::unique_ptr<CudaPollardDevice>(new CudaPollardDevice(engine, window, offsets, targetHashes, _config.debug)));
             }
 #endif
 #ifdef BUILD_OPENCL
             if(_devices[_config.device].type == DeviceManager::DeviceType::OpenCL) {
-                engine.setDevice(std::unique_ptr<CLPollardDevice>(new CLPollardDevice(engine, window, offsets, targetHashes)));
+                engine.setDevice(std::unique_ptr<CLPollardDevice>(new CLPollardDevice(engine, window, offsets, targetHashes, _config.debug)));
             }
 #endif
 
@@ -688,6 +691,7 @@ int main(int argc, char **argv)
     parser.add("", "--poll-interval", true);
     parser.add("", "--full", false);
     parser.add("", "--deterministic", false);
+    parser.add("", "--debug", false);
 
     try {
         parser.parse(argc, argv);
@@ -841,6 +845,8 @@ int main(int argc, char **argv)
                 _config.full = true;
             } else if(optArg.equals("", "--deterministic")) {
                 _config.deterministic = true;
+            } else if(optArg.equals("", "--debug")) {
+                _config.debug = true;
             }
 
 		} catch(std::string err) {

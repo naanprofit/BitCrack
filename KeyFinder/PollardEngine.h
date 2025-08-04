@@ -53,7 +53,8 @@ public:
                   const secp256k1::uint256 &U,
                   unsigned int batchSize = 1024,
                   unsigned int pollInterval = 100,
-                  bool sequential = false);
+                  bool sequential = false,
+                  bool debug = false);
 
     // Add a constraint of the form k \equiv value (mod 2^bits) for ``target``
     void addConstraint(size_t target, unsigned int bits,
@@ -103,6 +104,7 @@ private:
     secp256k1::uint256 _L;                    // search lower bound
     secp256k1::uint256 _U;                    // search upper bound
     bool _sequential;                         // sequential walk mode
+    bool _debug;                              // enable verbose logging
 
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
