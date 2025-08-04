@@ -27,15 +27,17 @@ struct PollardCLMatch {
 
 static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
-    unsigned int iv[5] = {
-        0x67452301,
-        0xefcdab89,
-        0x98badcfe,
-        0x10325476,
-        0xc3d2e1f0
+    // RIPEMD160 initialisation constants, undone from final round
+    static const unsigned int iv[5] = {
+        0x67452301u,
+        0xefcdab89u,
+        0x98badcfeu,
+        0x10325476u,
+        0xc3d2e1f0u
     };
 
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 5; ++i) {
+        // Subtract the IV from each word to match device-side constants
         hOut[i] = hIn[i] - iv[i];
     }
 }

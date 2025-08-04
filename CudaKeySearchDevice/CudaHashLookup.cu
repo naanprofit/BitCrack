@@ -26,15 +26,17 @@ __constant__ unsigned int _USE_BLOOM_FILTER[1];
 
 static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
-        unsigned int iv[5] = {
-                0x67452301,
-                0xefcdab89,
-                0x98badcfe,
-                0x10325476,
-                0xc3d2e1f0
+        // RIPEMD160 initial values used in the final round
+        static const unsigned int iv[5] = {
+                0x67452301u,
+                0xefcdab89u,
+                0x98badcfeu,
+                0x10325476u,
+                0xc3d2e1f0u
         };
 
-        for(int i = 0; i < 5; i++) {
+        for(int i = 0; i < 5; ++i) {
+                // Remove the IV contribution from each 32-bit word
                 hOut[i] = hIn[i] - iv[i];
         }
 }
