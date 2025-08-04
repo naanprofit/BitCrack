@@ -99,7 +99,7 @@ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bi
 }
 
 __kernel void pollard_walk(__global PollardWindow *out,
-                           __global uint *outCount,
+                           __global volatile uint *outCount,
                            uint maxOut,
                            __global ulong *seeds,
                            __global ulong *starts,
