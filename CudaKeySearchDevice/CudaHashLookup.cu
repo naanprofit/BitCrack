@@ -27,7 +27,7 @@ struct Hash160 {
         unsigned int v[5];
 };
 
-__device__ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+__device__ static Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
 {
         Hash160 out;
         for(int i = 0; i < 5; ++i) {
