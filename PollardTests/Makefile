@@ -1,5 +1,5 @@
 NAME=PollardTests
-CPPSRC=main.cpp
+CPPSRC=main.cpp ../KeyFinder/PollardEngine.cpp
 CUDASRC=cuda_scalar_one.cu
 BINDIR?=.
 
@@ -17,7 +17,7 @@ endif
 
 CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
 
-LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil
+LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil -lutil -llogger
 ifeq ($(BUILD_OPENCL),1)
 LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB}
 endif

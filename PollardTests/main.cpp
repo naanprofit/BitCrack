@@ -8,6 +8,7 @@
 #include <sstream>
 #include "AddressUtil.h"
 #include "../secp256k1lib/secp256k1.h"
+#include "../KeyFinder/PollardEngine.h"
 
 #if BUILD_CUDA
 #include <cuda_runtime.h>
@@ -210,6 +211,48 @@ bool testHashWindowLEK1() {
     return got == expected;
 }
 
+class StubDevice : public PollardDevice {
+    PollardMatch _m;
+    bool _sent = false;
+public:
+    StubDevice() {
+        secp256k1::uint256 k(1);
+        secp256k1::ecpoint p = secp256k1::multiplyPoint(k, secp256k1::G());
+        unsigned int be[5];
+        Hash::hashPublicKeyCompressed(p, be);
+        for(int j = 0; j < 5; ++j) {
+            _m.hash[j] = bswap32(be[4 - j]);
+        }
+        _m.scalar = k;
+    }
+    void startTameWalk(const secp256k1::uint256 &, uint64_t, const secp256k1::uint256 &, bool) override {
+        _sent = false;
+    }
+    void startWildWalk(const secp256k1::uint256 &, uint64_t, const secp256k1::uint256 &, bool) override {
+        _sent = false;
+    }
+    bool popResult(PollardMatch &out) override {
+        if(_sent) return false;
+        out = _m;
+        _sent = true;
+        return true;
+    }
+};
+
+bool testPollardHash160FindsKey() {
+    unsigned int words[5];
+    Base58::toHash160("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH", words);
+    std::array<unsigned int,5> target{};
+    for(int i = 0; i < 5; ++i) target[i] = words[i];
+    bool found = false;
+    PollardEngine engine([&](KeySearchResult r){ if(r.privateKey == secp256k1::uint256(1)) found = true; },
+                         8, std::vector<unsigned int>{0}, std::vector<std::array<unsigned int,5>>{target},
+                         secp256k1::uint256(1), secp256k1::uint256(0xFF), 1, 100, true, false);
+    engine.setDevice(std::unique_ptr<PollardDevice>(new StubDevice()));
+    engine.runTameWalk(secp256k1::uint256(1), 1);
+    return found;
+}
+
 static bool runOpenCLScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]) {
 #if BUILD_OPENCL
     try {
@@ -296,6 +339,7 @@ int main(){
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
+    if(!testPollardHash160FindsKey()) { std::cout<<"pollard hash160 failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }

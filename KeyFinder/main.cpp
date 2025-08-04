@@ -536,6 +536,25 @@ int runPollard()
     Logger::log(LogLevel::Info, "Poll batch: " + util::format(_config.pollBatch));
     Logger::log(LogLevel::Info, "Poll interval: " + util::format(_config.pollInterval) + " ms");
 
+    for(size_t t = 0; t < targetHashes.size(); ++t) {
+        for(unsigned int off : offsets) {
+            unsigned int bits = off + window;
+            secp256k1::uint256 rem = PollardEngine::hashWindow(targetHashes[t].data(), off, window);
+            std::string modStr;
+            if(bits >= 256) {
+                modStr = "2^256";
+            } else {
+                secp256k1::uint256 modVal = secp256k1::uint256(2).pow(bits);
+                modStr = modVal.toString(16);
+            }
+            Logger::log(LogLevel::Info,
+                        "Target " + util::format(t) +
+                        " offset=" + util::format(off) +
+                        " mod=" + modStr +
+                        " remainder=" + rem.toString(16));
+        }
+    }
+
     _resultFound = false;
 
     secp256k1::uint256 segmentStart = _config.nextKey;
