@@ -29,10 +29,10 @@ struct RNGState {
 };
 
 // Output structure used by the legacy random walk kernel. Each entry
-// stores the 64-bit scalar of a distinguished point along with the
+// stores the full 256-bit scalar of a distinguished point along with the
 // corresponding hash160 digest so the host can perform window matching.
 struct CudaPollardMatch {
-    unsigned long long k[4];
+    unsigned int k[8];
     unsigned int hash[5];
 };
 __device__ static inline unsigned long long xorshift128plus(RNGState &state)
@@ -46,12 +46,6 @@ __device__ static inline unsigned long long xorshift128plus(RNGState &state)
     x ^= y >> 26;
     state.s1 = x;
     return x + y;
-}
-
-__device__ static inline unsigned long long next_random_step(RNGState &state)
-{
-    const unsigned long long ORDER_MINUS_ONE = 0xBFD25E8CD0364140ULL;
-    return (xorshift128plus(state) % ORDER_MINUS_ONE) + 1ULL;
 }
 
 // Full secp256k1 group order expressed in little-endian words for scalar
@@ -96,14 +90,6 @@ __device__ static inline void addModN(const unsigned int a[8], const unsigned in
     if(carry || ge256(r, ORDER)) {
         sub256(r, ORDER, r);
     }
-}
-
-__device__ static inline void addModNU64(unsigned int a[8], unsigned long long b) {
-    unsigned int t[8];
-    t[0] = (unsigned int)b;
-    t[1] = (unsigned int)(b >> 32);
-    for(int i = 2; i < 8; ++i) t[i] = 0U;
-    addModN(a, t, a);
 }
 
 // Generate a random step in the range [1, ORDER-1]
@@ -246,37 +232,6 @@ __device__ static void pointAdd(const unsigned int ax[8], const unsigned int ay[
     subModP(ry, ay, ry);
 }
 
-__device__ static void scalarMultiplyBase64(unsigned long long k, unsigned int rx[8], unsigned int ry[8])
-{
-    setPointInfinity(rx, ry);
-    if(k == 0ULL) {
-        return;
-    }
-
-    unsigned int qx[8];
-    unsigned int qy[8];
-    copyBigInt(_GX, qx);
-    copyBigInt(_GY, qy);
-
-    while(k) {
-        if(k & 1ULL) {
-            unsigned int tx[8];
-            unsigned int ty[8];
-            pointAdd(rx, ry, qx, qy, tx, ty);
-            copyBigInt(tx, rx);
-            copyBigInt(ty, ry);
-        }
-        k >>= 1ULL;
-        if(k) {
-            unsigned int tx[8];
-            unsigned int ty[8];
-            pointDouble(qx, qy, tx, ty);
-            copyBigInt(tx, qx);
-            copyBigInt(ty, qy);
-        }
-    }
-}
-
 // Multiply the secp256k1 base point by a 256-bit scalar ``k`` (little endian)
 __device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int rx[8], unsigned int ry[8])
 {
@@ -313,16 +268,18 @@ __device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int 
 extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
                                              unsigned int *outCount,
                                              unsigned int maxOut,
-                                             const unsigned long long *seeds,
-                                             const unsigned long long *starts,
+                                             const unsigned int *seeds,
+                                             const unsigned int *starts,
                                              const unsigned int *startX,
                                              const unsigned int *startY,
                                              unsigned int steps,
                                              unsigned int windowBits)
 {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned long long scalar = starts[tid];
-    const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
+    unsigned int scalar[8];
+    for(int i = 0; i < 8; ++i) {
+        scalar[i] = starts[tid * 8 + i];
+    }
     unsigned int px[8];
     unsigned int py[8];
 
@@ -332,30 +289,42 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
             py[i] = startY[tid * 8 + i];
         }
     } else {
-        scalarMultiplyBase64(scalar, px, py);
+        scalarMultiplyBase(scalar, px, py);
     }
 
-    RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
-    unsigned long long mask = (windowBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << windowBits) - 1ULL);
+    unsigned long long s0 = ((unsigned long long)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
+    unsigned long long s1 = ((unsigned long long)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
+    RNGState rng{ s0 ^ 1ULL, s1 + 1ULL };
+
+    unsigned int mask[8];
+    for(int i = 0; i < 8; ++i) mask[i] = 0U;
+    unsigned int fullWords = windowBits / 32;
+    for(unsigned int i = 0; i < fullWords && i < 8; ++i) mask[i] = 0xffffffffU;
+    if(windowBits % 32 && fullWords < 8) {
+        mask[fullWords] = (1U << (windowBits % 32)) - 1U;
+    }
 
     for(unsigned int i = 0; i < steps; ++i) {
-        unsigned long long step = next_random_step(rng);
-        scalar += step;
-        scalar %= ORDER;
+        unsigned int step[8];
+        next_random_step(rng, step);
+        addModN(scalar, step, scalar);
 
         unsigned int sx[8];
         unsigned int sy[8];
-        scalarMultiplyBase64(step, sx, sy);
+        scalarMultiplyBase(step, sx, sy);
         unsigned int tx[8];
         unsigned int ty[8];
         pointAdd(px, py, sx, sy, tx, ty);
         copyBigInt(tx, px);
         copyBigInt(ty, py);
 
-        if((scalar & mask) == 0ULL) {
+        bool distinguished = true;
+        for(int j = 0; j < 8; ++j) {
+            if((scalar[j] & mask[j]) != 0U) { distinguished = false; break; }
+        }
+        if(distinguished) {
             unsigned int digest[5];
             unsigned int finalHash[5];
-            // py[7] holds the least significant word; py[7] & 1 yields the parity bit
             hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
             for(int j = 0; j < 5; ++j) {
@@ -364,10 +333,9 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
 
             unsigned int idx = atomicAdd(outCount, 1u);
             if(idx < maxOut) {
-                out[idx].k[0] = scalar;
-                out[idx].k[1] = 0ULL;
-                out[idx].k[2] = 0ULL;
-                out[idx].k[3] = 0ULL;
+                for(int j = 0; j < 8; ++j) {
+                    out[idx].k[j] = scalar[j];
+                }
                 for(int j = 0; j < 5; ++j) {
                     out[idx].hash[j] = finalHash[j];
                 }
@@ -450,16 +418,8 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                         out[idx].targetIdx = tw.targetIdx;
                         out[idx].offset    = tw.offset;
                         out[idx].bits      = tw.bits;
-                        unsigned int modBits = tw.offset + tw.bits;
-                        unsigned int wordsK = (modBits + 31) / 32;
-                        for(unsigned int j = 0; j < wordsK; ++j) {
+                        for(int j = 0; j < 8; ++j) {
                             out[idx].k[j] = scalar[j];
-                        }
-                        if(modBits % 32) {
-                            out[idx].k[wordsK - 1] &= ((1U << (modBits % 32)) - 1U);
-                        }
-                        for(unsigned int j = wordsK; j < 8; ++j) {
-                            out[idx].k[j] = 0U;
                         }
                     }
                 }
@@ -492,16 +452,8 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                         out[idx].targetIdx = tw.targetIdx;
                         out[idx].offset    = tw.offset;
                         out[idx].bits      = tw.bits;
-                        unsigned int modBits = tw.offset + tw.bits;
-                        unsigned int wordsK = (modBits + 31) / 32;
-                        for(unsigned int j = 0; j < wordsK; ++j) {
+                        for(int j = 0; j < 8; ++j) {
                             out[idx].k[j] = scalar[j];
-                        }
-                        if(modBits % 32) {
-                            out[idx].k[wordsK - 1] &= ((1U << (modBits % 32)) - 1U);
-                        }
-                        for(unsigned int j = wordsK; j < 8; ++j) {
-                            out[idx].k[j] = 0U;
                         }
                     }
                 }
