@@ -8,6 +8,7 @@ typedef struct {
     uint targetIdx;
     uint offset;
     uint bits;
+    // 256-bit scalar for this step (little-endian words)
     uint k[8];
 } PollardWindow;
 

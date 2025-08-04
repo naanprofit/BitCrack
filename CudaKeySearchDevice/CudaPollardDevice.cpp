@@ -10,6 +10,7 @@ struct GpuPollardWindow {
     unsigned int targetIdx;
     unsigned int offset;
     unsigned int bits;
+    // Returned scalar fragment (full 256-bit value in little-endian order)
     unsigned int k[8];
 };
 

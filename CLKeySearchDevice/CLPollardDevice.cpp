@@ -67,6 +67,7 @@ struct PollardWindowCL {
     cl_uint targetIdx;
     cl_uint offset;
     cl_uint bits;
+    // 256-bit scalar fragment returned by the device
     cl_uint k[8];
 };
 
