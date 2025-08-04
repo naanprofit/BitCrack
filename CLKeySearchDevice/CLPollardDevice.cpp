@@ -77,7 +77,7 @@ void runWalk(PollardEngine &engine,
              const std::vector<unsigned int> &offsets,
              const std::vector<std::array<unsigned int,5>> &targets,
              uint64_t steps,
-             uint64_t seed,
+             const uint256 &seed,
              const uint256 *start,
              bool wild,
              bool sequential) {
@@ -186,7 +186,7 @@ void runWalk(PollardEngine &engine,
         basePoint = multiplyPoint(*start, G());
     }
     for(size_t i = 0; i < global; ++i) {
-        uint256 sSeed(seed + i);
+        uint256 sSeed = seed + uint256(static_cast<uint64_t>(i));
         sSeed.exportWords(&h_seeds[i*8], 8);
         strideVal.exportWords(&h_stride[i*8], 8);
         if(wild) {
@@ -271,13 +271,13 @@ void runWalk(PollardEngine &engine,
 } // namespace
 
 void CLPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
-                                    uint64_t seed, bool sequential) {
+                                    const uint256 &seed, bool sequential) {
     runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, &start,
             false, sequential);
 }
 
 void CLPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
-                                    uint64_t seed, bool sequential) {
+                                    const uint256 &seed, bool sequential) {
     runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, &start,
             true, sequential);
 }
