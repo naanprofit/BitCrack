@@ -47,7 +47,16 @@ static secp256k1::ecpoint scalarMultiplyBase(uint64_t k) {
     secp256k1::uint256 scalar(k);
     auto split = secp256k1::splitScalar(scalar);
     secp256k1::ecpoint p1 = secp256k1::multiplyPoint(split.k1, secp256k1::G());
+    if(split.k1Neg) {
+        p1.y = secp256k1::negModP(p1.y);
+    }
+    if(split.k2.isZero()) {
+        return p1;
+    }
     secp256k1::ecpoint p2 = secp256k1::multiplyPoint(split.k2, secp256k1::glvEndomorphismBasePoint());
+    if(split.k2Neg) {
+        p2.y = secp256k1::negModP(p2.y);
+    }
     return secp256k1::addPoints(p1, p2);
 }
 
