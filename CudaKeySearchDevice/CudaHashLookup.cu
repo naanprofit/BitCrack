@@ -29,7 +29,8 @@ struct Hash160 {
         uint32_t v[5];
 };
 
-// Extract ``bits`` bits from ``h`` starting at ``offset``.
+// Extract ``bits`` bits starting at ``offset`` from a little-endian hash. The
+// result is returned as five 32-bit words with any unused high words cleared.
 __device__ static Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bits)
 {
         Hash160 out;
@@ -38,8 +39,7 @@ __device__ static Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint3
         }
         uint32_t word = offset / 32;
         uint32_t bit  = offset % 32;
-        uint32_t span = bit + bits;
-        uint32_t words = (span + 31) / 32;
+        uint32_t words = (bits + 31) / 32;
         for(uint32_t i = 0; i < words && word + i < 5; ++i) {
                 uint64_t val = ((uint64_t)h[word + i]) >> bit;
                 if(bit && word + i + 1 < 5) {
@@ -47,8 +47,9 @@ __device__ static Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint3
                 }
                 out.v[i] = (uint32_t)(val & 0xffffffffULL);
         }
-        if(span % 32) {
-                uint32_t mask = (1u << (span % 32)) - 1u;
+        uint32_t maskBits = bits % 32;
+        if(maskBits) {
+                uint32_t mask = (1u << maskBits) - 1u;
                 out.v[words - 1] &= mask;
         }
         for(uint32_t i = words; i < 5; ++i) {

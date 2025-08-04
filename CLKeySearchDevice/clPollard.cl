@@ -419,9 +419,8 @@ void hashPublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsi
 }
 
 // Extract ``bits`` bits starting at ``offset`` from the 160-bit RIPEMD160
-// digest ``h``. Bits are interpreted in little-endian order and returned as a
-// 160-bit value with higher bits cleared.  The result is stored as five
-// 32-bit little-endian words.
+// digest ``h``. Bits are interpreted in little-endian order and the result is
+// returned as five 32-bit words with higher bits cleared.
 typedef struct { uint v[5]; } Hash160;
 
 Hash160 hashWindow(const uint h[5], uint offset, uint bits)
@@ -430,8 +429,7 @@ Hash160 hashWindow(const uint h[5], uint offset, uint bits)
     for(int i=0;i<5;i++) out.v[i]=0u;
     unsigned int word = offset / 32;
     unsigned int bit  = offset % 32;
-    unsigned int span = bit + bits;
-    unsigned int words = (span + 31) / 32;
+    unsigned int words = (bits + 31) / 32;
     for(unsigned int i=0;i<words && word + i < 5; i++) {
         ulong val = ((ulong)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -439,8 +437,9 @@ Hash160 hashWindow(const uint h[5], uint offset, uint bits)
         }
         out.v[i] = (uint)(val & 0xffffffffUL);
     }
-    if(span % 32) {
-        uint mask = (1u << (span % 32)) - 1u;
+    uint maskBits = bits % 32;
+    if(maskBits) {
+        uint mask = (1u << maskBits) - 1u;
         out.v[words-1] &= mask;
     }
     for(unsigned int i=words;i<5;i++) {

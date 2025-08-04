@@ -126,15 +126,14 @@ static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn
 }
 
 // Extract ``bits`` bits starting at ``offset`` from the 160-bit RIPEMD160
-// digest ``h``.  Bits are interpreted in little-endian order and returned in
-// the lower bits of a five word structure.  Each word holds 32 bits giving a
-// full capacity of 160 bits.
+// digest ``h``. Bits are interpreted in little-endian order and the result is
+// returned as five 32-bit words with higher words cleared.
 struct Hash160 {
     uint32_t v[5];
 };
 
 // Return ``bits`` bits of ``h`` starting at ``offset`` as a little-endian
-// 160-bit value.  Any combination of offset and size that stays within 160
+// 160-bit value. Any combination of offset and size that stays within 160
 // bits is supported.
 __device__ Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bits)
 {
@@ -144,8 +143,7 @@ __device__ Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bit
     }
     uint32_t word  = offset / 32;
     uint32_t bit   = offset % 32;
-    uint32_t span  = bit + bits;
-    uint32_t words = (span + 31) / 32;
+    uint32_t words = (bits + 31) / 32;
     for(uint32_t i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -153,8 +151,9 @@ __device__ Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bit
         }
         out.v[i] = (uint32_t)(val & 0xffffffffULL);
     }
-    if(span % 32) {
-        uint32_t mask = (1u << (span % 32)) - 1u;
+    uint32_t maskBits = bits % 32;
+    if(maskBits) {
+        uint32_t mask = (1u << maskBits) - 1u;
         out.v[words - 1] &= mask;
     }
     for(uint32_t i = words; i < 5; ++i) {
