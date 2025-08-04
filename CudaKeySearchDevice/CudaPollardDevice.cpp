@@ -20,6 +20,9 @@ struct GpuTargetWindow {
     unsigned int target[5];
 };
 
+// Extract ``bits`` bits starting at ``offset`` from the 160-bit hash ``h``.
+// ``h`` must be provided in little-endian word order so bit offsets match
+// the expectations of the device kernels.
 static uint256 hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
     uint256 out(0);
     unsigned int word = offset / 32;
@@ -64,15 +67,8 @@ CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      const std::vector<unsigned int> &offsets,
                                      const std::vector<std::array<unsigned int,5>> &targets,
                                      bool debug)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _debug(debug) {
-    _targets.reserve(targets.size());
-    for(const auto &t : targets) {
-        uint256 v = uint256::importBigEndian(t.data(), 5);
-        std::array<unsigned int,5> le;
-        v.exportWords(le.data(), 5);
-        _targets.push_back(le);
-    }
-}
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets),
+      _targets(targets), _debug(debug) {}
 
 void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
                                       const uint256 &seed, bool sequential) {

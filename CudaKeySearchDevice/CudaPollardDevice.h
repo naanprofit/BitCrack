@@ -9,12 +9,15 @@ class CudaPollardDevice : public PollardDevice {
     PollardEngine &_engine;
     unsigned int _windowBits;
     std::vector<unsigned int> _offsets;
+    // RIPEMD160 hashes in little-endian word order
     std::vector<std::array<unsigned int,5>> _targets;
     bool _debug;
 public:
     CudaPollardDevice(PollardEngine &engine,
                       unsigned int windowBits,
                       const std::vector<unsigned int> &offsets,
+                      // ``targets`` must contain RIPEMD160 hashes in
+                      // little-endian word order
                       const std::vector<std::array<unsigned int,5>> &targets,
                       bool debug);
 
