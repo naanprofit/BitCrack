@@ -87,7 +87,7 @@ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
     };
 
     for(int i = 0; i < 5; i++) {
-        hOut[i] = hIn[i] + iv[(i + 1) % 5];
+        hOut[i] = hIn[i] + iv[i];
     }
 }
 
