@@ -181,7 +181,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     uint256 base = start;
     unsigned long long stride = sequential ? static_cast<unsigned long long>(totalThreads) : 0ULL;
-    uint256 strideVal(stride);
+    uint256 strideVal(static_cast<uint64_t>(stride));
     uint256 startBase = base;
     if(sequential) {
         uint256 offset = multiplyModN(strideVal, uint256(steps - 1));
