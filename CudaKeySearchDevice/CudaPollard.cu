@@ -12,6 +12,7 @@ struct GpuPollardWindow {
     unsigned int targetIdx;
     unsigned int offset;
     unsigned int bits;
+    // Full 256-bit scalar of the distinguished point in little-endian word order
     unsigned int k[8];
 };
 
