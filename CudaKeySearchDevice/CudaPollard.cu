@@ -378,7 +378,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        unsigned int steps,
                                        const TargetWindow *windows,
                                        unsigned int windowCount,
-                                       unsigned long long stride)
+                                       const unsigned int *strides)
 {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int scalar[8];
@@ -397,7 +397,12 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
         scalarMultiplyBase(scalar, px, py);
     }
 
-    if(stride == 0ULL) {
+    unsigned int stride[8];
+    for(int i = 0; i < 8; ++i) {
+        stride[i] = strides ? strides[tid * 8 + i] : 0U;
+    }
+
+    if(isZero256(stride)) {
         unsigned long long s0 = ((unsigned long long)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
         unsigned long long s1 = ((unsigned long long)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
         RNGState rng{ s0 ^ 1ULL, s1 + 1ULL };
@@ -450,10 +455,9 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             }
         }
     } else {
-        unsigned int strideArr[8] = { (unsigned int)stride, (unsigned int)(stride >> 32), 0,0,0,0,0,0 };
         unsigned int sx[8];
         unsigned int sy[8];
-        scalarMultiplyBase(strideArr, sx, sy);
+        scalarMultiplyBase(stride, sx, sy);
         for(unsigned int i = 0; i < steps; ++i) {
             unsigned int digest[5];
             unsigned int finalHash[5];
@@ -489,7 +493,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                 }
             }
 
-            addModNU64(scalar, stride);
+            addModN(scalar, stride, scalar);
             unsigned int tx[8];
             unsigned int ty[8];
             pointAdd(px, py, sx, sy, tx, ty);
