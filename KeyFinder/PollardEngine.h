@@ -122,8 +122,8 @@ private:
     void handleMatch(const PollardMatch &m);
     void pollDevice();
 
-    static uint64_t hashWindow(const unsigned int h[5], unsigned int offset,
-                               unsigned int bits);
+    static secp256k1::uint256 hashWindow(const unsigned int h[5], unsigned int offset,
+                                         unsigned int bits);
 };
 
 #endif

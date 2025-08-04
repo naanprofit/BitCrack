@@ -19,7 +19,7 @@ public:
                     bool debug);
 
     static secp256k1::uint256 maskBits(unsigned int bits);
-    static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits);
+    static secp256k1::uint256 hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits);
 
     void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
                        uint64_t seed, bool sequential) override;

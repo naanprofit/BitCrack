@@ -19,7 +19,7 @@ struct TargetWindow {
     unsigned int targetIdx;
     unsigned int offset;
     unsigned int bits;
-    unsigned long long target;
+    unsigned int target[5];
 };
 
 struct RNGState {
@@ -132,28 +132,33 @@ static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn
 }
 
 // Extract ``bits`` bits starting at ``offset`` from the RIPEMD160 digest
-// ``h``.  Bits are interpreted in little-endian order.
-__device__ unsigned long long hashWindow(const unsigned int h[5],
-                                         unsigned int offset,
-                                         unsigned int bits)
+// ``h``.  Bits are interpreted in little-endian order and returned in the
+// lower bits of the 160-bit structure.
+struct Hash160 {
+    unsigned int v[5];
+};
+
+__device__ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
 {
+    Hash160 out;
+    for(int i = 0; i < 5; ++i) {
+        out.v[i] = 0u;
+    }
     unsigned int word = offset / 32;
     unsigned int bit  = offset % 32;
-    unsigned long long val = 0ULL;
-    if(word < 5) {
-        val = ((unsigned long long)h[word]) >> bit;
-        if(bit + bits > 32 && word + 1 < 5) {
-            val |= ((unsigned long long)h[word + 1]) << (32 - bit);
+    unsigned int words = (bits + 31) / 32;
+    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+        unsigned long long val = ((unsigned long long)h[word + i]) >> bit;
+        if(bit && word + i + 1 < 5) {
+            val |= ((unsigned long long)h[word + i + 1]) << (32 - bit);
         }
+        out.v[i] = (unsigned int)(val & 0xffffffffULL);
     }
-    if(bit + bits > 64 && word + 2 < 5) {
-        val |= ((unsigned long long)h[word + 2]) << (64 - bit);
+    if(bits % 32) {
+        unsigned int mask = (1u << (bits % 32)) - 1u;
+        out.v[words - 1] &= mask;
     }
-    if(bits < 64) {
-        unsigned long long mask = (bits == 64) ? 0xffffffffffffffffULL : ((1ULL << bits) - 1ULL);
-        val &= mask;
-    }
-    return val;
+    return out;
 }
 
 __device__ static void setPointInfinity(unsigned int x[8], unsigned int y[8])
@@ -417,22 +422,27 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
 
             for(unsigned int w = 0; w < windowCount; ++w) {
                 TargetWindow tw = windows[w];
-                unsigned long long hv = hashWindow(finalHash, tw.offset, tw.bits);
-                if(hv == tw.target) {
+                Hash160 hv = hashWindow(finalHash, tw.offset, tw.bits);
+                unsigned int words = (tw.bits + 31) / 32;
+                bool match = true;
+                for(unsigned int j = 0; j < words; ++j) {
+                    if(hv.v[j] != tw.target[j]) { match = false; break; }
+                }
+                if(match) {
                     unsigned int idx = atomicAdd(outCount, 1u);
                     if(idx < maxOut) {
                         out[idx].targetIdx = tw.targetIdx;
                         out[idx].offset    = tw.offset;
                         out[idx].bits      = tw.bits;
                         unsigned int modBits = tw.offset + tw.bits;
-                        unsigned int words = (modBits + 31) / 32;
-                        for(unsigned int j = 0; j < words; ++j) {
+                        unsigned int wordsK = (modBits + 31) / 32;
+                        for(unsigned int j = 0; j < wordsK; ++j) {
                             out[idx].k[j] = scalar[j];
                         }
                         if(modBits % 32) {
-                            out[idx].k[words - 1] &= ((1U << (modBits % 32)) - 1U);
+                            out[idx].k[wordsK - 1] &= ((1U << (modBits % 32)) - 1U);
                         }
-                        for(unsigned int j = words; j < 8; ++j) {
+                        for(unsigned int j = wordsK; j < 8; ++j) {
                             out[idx].k[j] = 0U;
                         }
                     }
@@ -452,22 +462,27 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
 
             for(unsigned int w = 0; w < windowCount; ++w) {
                 TargetWindow tw = windows[w];
-                unsigned long long hv = hashWindow(finalHash, tw.offset, tw.bits);
-                if(hv == tw.target) {
+                Hash160 hv = hashWindow(finalHash, tw.offset, tw.bits);
+                unsigned int words = (tw.bits + 31) / 32;
+                bool match = true;
+                for(unsigned int j = 0; j < words; ++j) {
+                    if(hv.v[j] != tw.target[j]) { match = false; break; }
+                }
+                if(match) {
                     unsigned int idx = atomicAdd(outCount, 1u);
                     if(idx < maxOut) {
                         out[idx].targetIdx = tw.targetIdx;
                         out[idx].offset    = tw.offset;
                         out[idx].bits      = tw.bits;
                         unsigned int modBits = tw.offset + tw.bits;
-                        unsigned int words = (modBits + 31) / 32;
-                        for(unsigned int j = 0; j < words; ++j) {
+                        unsigned int wordsK = (modBits + 31) / 32;
+                        for(unsigned int j = 0; j < wordsK; ++j) {
                             out[idx].k[j] = scalar[j];
                         }
                         if(modBits % 32) {
-                            out[idx].k[words - 1] &= ((1U << (modBits % 32)) - 1U);
+                            out[idx].k[wordsK - 1] &= ((1U << (modBits % 32)) - 1U);
                         }
-                        for(unsigned int j = words; j < 8; ++j) {
+                        for(unsigned int j = wordsK; j < 8; ++j) {
                             out[idx].k[j] = 0U;
                         }
                     }

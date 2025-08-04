@@ -13,7 +13,7 @@ typedef struct {
     uint targetIdx;
     uint offset;
     uint bits;
-    ulong target;    // expected window value (LSB order)
+    uint target[5];    // expected window value (LSB order)
 } TargetWindow;
 
 typedef struct {
@@ -73,26 +73,29 @@ void hashPublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsi
 }
 
 // Extract ``bits`` bits starting at ``offset`` from the 160-bit RIPEMD160
-// digest ``h``.  Bits are interpreted in little-endian order.
-ulong hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+// digest ``h``. Bits are interpreted in little-endian order and returned as a
+// 160-bit value with higher bits cleared.
+typedef struct { uint v[5]; } Hash160;
+
+Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
 {
+    Hash160 out; 
+    for(int i=0;i<5;i++) out.v[i]=0u;
     unsigned int word = offset / 32;
     unsigned int bit  = offset % 32;
-    ulong val = 0UL;
-    if(word < 5) {
-        val = ((ulong)h[word]) >> bit;
-        if(bit + bits > 32 && word + 1 < 5) {
-            val |= ((ulong)h[word + 1]) << (32 - bit);
+    unsigned int words = (bits + 31) / 32;
+    for(unsigned int i=0;i<words && word + i < 5; i++) {
+        ulong val = ((ulong)h[word + i]) >> bit;
+        if(bit && word + i + 1 < 5) {
+            val |= ((ulong)h[word + i + 1]) << (32 - bit);
         }
+        out.v[i] = (uint)(val & 0xffffffffUL);
     }
-    if(bit + bits > 64 && word + 2 < 5) {
-        val |= ((ulong)h[word + 2]) << (64 - bit);
+    if(bits % 32) {
+        uint mask = (1u << (bits % 32)) - 1u;
+        out.v[words-1] &= mask;
     }
-    if(bits < 64) {
-        ulong mask = (bits == 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << bits) - 1UL);
-        val &= mask;
-    }
-    return val;
+    return out;
 }
 
 __kernel void pollard_walk(__global PollardWindow *out,
@@ -145,8 +148,13 @@ __kernel void pollard_walk(__global PollardWindow *out,
 
             for(uint w = 0; w < windowCount; w++) {
                 TargetWindow tw = windows[w];
-                ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
-                if(hv == tw.target) {
+                Hash160 hv = hashWindow(finalHash, tw.offset, tw.bits);
+                uint words = (tw.bits + 31) / 32;
+                int match = 1;
+                for(uint j = 0; j < words; j++) {
+                    if(hv.v[j] != tw.target[j]) { match = 0; break; }
+                }
+                if(match) {
                     uint slot = atomic_inc(outCount);
                     if(slot < maxOut) {
                         out[slot].targetIdx = tw.targetIdx;
@@ -176,8 +184,13 @@ __kernel void pollard_walk(__global PollardWindow *out,
 
             for(uint w = 0; w < windowCount; w++) {
                 TargetWindow tw = windows[w];
-                ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
-                if(hv == tw.target) {
+                Hash160 hv = hashWindow(finalHash, tw.offset, tw.bits);
+                uint words = (tw.bits + 31) / 32;
+                int match = 1;
+                for(uint j = 0; j < words; j++) {
+                    if(hv.v[j] != tw.target[j]) { match = 0; break; }
+                }
+                if(match) {
                     uint slot = atomic_inc(outCount);
                     if(slot < maxOut) {
                         out[slot].targetIdx = tw.targetIdx;
