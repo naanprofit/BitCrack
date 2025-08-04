@@ -70,6 +70,9 @@ Options:
 
 --continue FILE
     Save/load progress from FILE
+
+--hash160 HEX
+    Add a 40-hex-character RIPEMD160 hash as a search target
 ```
 
 #### Examples
