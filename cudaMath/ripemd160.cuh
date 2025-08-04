@@ -18,100 +18,100 @@ extern __constant__ unsigned int _K6;
 extern __constant__ unsigned int _K7;
 
 
-__device__ __forceinline__ unsigned int rotl(unsigned int x, int n)
+static __device__ __forceinline__ unsigned int rotl(unsigned int x, int n)
 {
 	return (x << n) | (x >> (32 - n));
 }
 
-__device__ __forceinline__ unsigned int F(unsigned int x, unsigned int y, unsigned int z)
+static __device__ __forceinline__ unsigned int F(unsigned int x, unsigned int y, unsigned int z)
 {
 	return x ^ y ^ z;
 }
 
-__device__ __forceinline__ unsigned int G(unsigned int x, unsigned int y, unsigned int z)
+static __device__ __forceinline__ unsigned int G(unsigned int x, unsigned int y, unsigned int z)
 {
 	return (((x) & (y)) | (~(x) & (z)));
 }
 
-__device__ __forceinline__ unsigned int H(unsigned int x, unsigned int y, unsigned int z)
+static __device__ __forceinline__ unsigned int H(unsigned int x, unsigned int y, unsigned int z)
 {
 	return (((x) | ~(y)) ^ (z));
 }
 
-__device__ __forceinline__ unsigned int I(unsigned int x, unsigned int y, unsigned int z)
+static __device__ __forceinline__ unsigned int I(unsigned int x, unsigned int y, unsigned int z)
 {
 	return (((x) & (z)) | ((y) & ~(z)));
 }
 
-__device__ __forceinline__ unsigned int J(unsigned int x, unsigned int y, unsigned int z)
+static __device__ __forceinline__ unsigned int J(unsigned int x, unsigned int y, unsigned int z)
 {
 	return  ((x) ^ ((y) | ~(z)));
 }
 
-__device__ __forceinline__ void FF(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void FF(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += F(b, c, d) + x;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void GG(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void GG(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += G(b, c, d) + x + _K0;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void HH(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void HH(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += H(b, c, d) + x + _K1;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void II(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void II(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += I(b, c, d) + x + _K2;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void JJ(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void JJ(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += J(b, c, d) + x + _K3;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void FFF(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void FFF(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += F(b, c, d) + x;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void GGG(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void GGG(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += G(b, c, d) + x + _K4;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void HHH(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void HHH(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += H(b, c, d) + x + _K5;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void III(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void III(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += I(b, c, d) + x + _K6;
 	a = rotl(a, s) + e;
 	c = rotl(c, 10);
 }
 
-__device__ __forceinline__ void JJJ(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
+static __device__ __forceinline__ void JJJ(unsigned int &a, unsigned int &b, unsigned int &c, unsigned int &d, unsigned int &e, unsigned int x, unsigned int s)
 {
 	a += J(b, c, d) + x + _K7;
 	a = rotl(a, s) + e;
@@ -120,7 +120,7 @@ __device__ __forceinline__ void JJJ(unsigned int &a, unsigned int &b, unsigned i
 
 
 
-__device__ void ripemd160sha256(const unsigned int x[8], unsigned int digest[5])
+static __device__ __forceinline__ void ripemd160sha256(const unsigned int x[8], unsigned int digest[5])
 {
 	unsigned int a1 = _RIPEMD160_IV[0];
 	unsigned int b1 = _RIPEMD160_IV[1];
@@ -326,7 +326,7 @@ __device__ void ripemd160sha256(const unsigned int x[8], unsigned int digest[5])
 
 
 
-__device__ void ripemd160sha256NoFinal(const unsigned int x[8], unsigned int digest[5])
+static __device__ __forceinline__ void ripemd160sha256NoFinal(const unsigned int x[8], unsigned int digest[5])
 {
 	unsigned int a1 = _RIPEMD160_IV[0];
 	unsigned int b1 = _RIPEMD160_IV[1];
