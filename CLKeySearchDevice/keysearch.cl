@@ -164,7 +164,7 @@ __kernel void multiplyStepKernel(
 }
 
 
-void hashPublicKey(uint256_t x, uint256_t y, unsigned int* digestOut)
+void hashPublicKey(uint256_t x, uint256_t y, __private unsigned int* digestOut)
 {
     unsigned int hash[8];
 
@@ -178,7 +178,7 @@ void hashPublicKey(uint256_t x, uint256_t y, unsigned int* digestOut)
     ripemd160sha256NoFinal(hash, digestOut);
 }
 
-void hashPublicKeyCompressed(uint256_t x, unsigned int yParity, unsigned int* digestOut)
+void hashPublicKeyCompressed(uint256_t x, unsigned int yParity, __private unsigned int* digestOut)
 {
     unsigned int hash[8];
 
