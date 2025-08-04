@@ -22,7 +22,7 @@ cuda:
 ;   ${NVCC} -c $$file -o $$base".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
-;${NVCC} -dlink -o cuda_libs.o *.o -lcudadevrt -lcudart
+;${NVCC} ${NVCCFLAGS} -dlink -o cuda_libs.o *.o -lcudadevrt -lcudart
 
 ;ar rvs ${LIBDIR}/lib$(NAME).a *.o
 
