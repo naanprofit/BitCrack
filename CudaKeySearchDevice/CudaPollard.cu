@@ -27,6 +27,13 @@ struct RNGState {
     unsigned long long s1;
 };
 
+// Output structure used by the legacy random walk kernel. Each entry
+// stores the 64-bit scalar of a distinguished point along with the
+// corresponding hash160 digest so the host can perform window matching.
+struct CudaPollardMatch {
+    unsigned long long k[4];
+    unsigned int hash[5];
+};
 __device__ static inline unsigned long long xorshift128plus(RNGState &state)
 {
     unsigned long long x = state.s0;
@@ -193,6 +200,72 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
             pointDouble(qx, qy, tx, ty);
             copyBigInt(tx, qx);
             copyBigInt(ty, qy);
+        }
+    }
+}
+
+// Legacy kernel retained for backwards compatibility. It performs a
+// random walk and records distinguished points (those where the low
+// ``windowBits`` bits of the scalar are zero), outputting the scalar and
+// its hash160 digest.
+extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
+                                             unsigned int *outCount,
+                                             unsigned int maxOut,
+                                             const unsigned long long *seeds,
+                                             const unsigned long long *starts,
+                                             const unsigned int *startX,
+                                             const unsigned int *startY,
+                                             unsigned int steps,
+                                             unsigned int windowBits)
+{
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned long long scalar = starts[tid];
+    const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
+    unsigned int px[8];
+    unsigned int py[8];
+
+    if(startX && startY) {
+        for(int i = 0; i < 8; ++i) {
+            px[i] = startX[tid * 8 + i];
+            py[i] = startY[tid * 8 + i];
+        }
+    } else {
+        scalarMultiplyBase(scalar, px, py);
+    }
+
+    RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
+    unsigned long long mask = (windowBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << windowBits) - 1ULL);
+
+    for(unsigned int i = 0; i < steps; ++i) {
+        unsigned long long step = next_random_step(rng);
+        scalar += step;
+        scalar %= ORDER;
+
+        unsigned int sx[8];
+        unsigned int sy[8];
+        scalarMultiplyBase(step, sx, sy);
+        unsigned int tx[8];
+        unsigned int ty[8];
+        pointAdd(px, py, sx, sy, tx, ty);
+        copyBigInt(tx, px);
+        copyBigInt(ty, py);
+
+        if((scalar & mask) == 0ULL) {
+            unsigned int digest[5];
+            unsigned int finalHash[5];
+            hashPublicKeyCompressed(px, py[7], digest);
+            doRMD160FinalRound(digest, finalHash);
+
+            unsigned int idx = atomicAdd(outCount, 1u);
+            if(idx < maxOut) {
+                out[idx].k[0] = scalar;
+                out[idx].k[1] = 0ULL;
+                out[idx].k[2] = 0ULL;
+                out[idx].k[3] = 0ULL;
+                for(int j = 0; j < 5; ++j) {
+                    out[idx].hash[j] = finalHash[j];
+                }
+            }
         }
     }
 }

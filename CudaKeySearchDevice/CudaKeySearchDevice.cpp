@@ -347,6 +347,7 @@ void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t s
     cudaCall(cudaMalloc(&d_count, sizeof(unsigned int)));
     cudaCall(cudaMalloc(&d_seeds, sizeof(unsigned long long)));
     cudaCall(cudaMalloc(&d_starts, sizeof(unsigned long long)));
+    cudaCall(cudaMemset(d_count, 0, sizeof(unsigned int)));
 
     unsigned long long h_seed = seed;
     unsigned long long h_start = 0ULL;
