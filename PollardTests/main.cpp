@@ -7,7 +7,7 @@
 #include <string>
 #include <sstream>
 #include "AddressUtil.h"
-#include "../secp256k1lib/secp256k1_glv.h"
+#include "../secp256k1lib/secp256k1.h"
 
 #if BUILD_CUDA
 #include <cuda_runtime.h>

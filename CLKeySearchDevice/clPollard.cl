@@ -43,6 +43,14 @@ __constant uint ORDER[8] = {
     0xFFFFFFFEU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
 };
 
+static const uint A1[8] = {2458184469U,3899429092U,2815716301U,814141985U,0U,0U,0U,0U};
+static const uint B1[8] = {180348099U,1867808681U,17729576U,3829628630U,0U,0U,0U,0U};
+static const uint A2[8] = {2638532568U,1472270477U,2833445878U,348803319U,1U,0U,0U,0U};
+static const uint B2[8] = {2458184469U,3899429092U,2815716301U,814141985U,0U,0U,0U,0U};
+static const uint G1[5] = {3944037802U,2430898820U,1808656492U,3525421012U,12422U};
+static const uint G2[5] = {3838059026U,2141784767U,2284351316U,2127954190U,58435U};
+static const uint _BETA[8] = {0x7AE96A2BU,0x657C0710U,0x6E64479EU,0xAC3434E9U,0x9CF04975U,0x12F58995U,0xC1396C28U,0x719501EEU};
+
 int isZero256(const uint a[8]) {
     for(int i=0;i<8;i++) {
         if(a[i] != 0U) return 0;
@@ -116,6 +124,106 @@ int equal(const uint a[8], const uint b[8]) {
     return 1;
 }
 
+void glvMulWords(const uint *x, int xLen, const uint *y, int yLen, uint *z) {
+    for(int i=0;i<xLen+yLen;i++) z[i]=0U;
+    for(int i=0;i<xLen;i++) {
+        uint carry=0U;
+        for(int j=0;j<yLen;j++) {
+            ulong p = (ulong)x[i]*(ulong)y[j] + z[i+j] + carry;
+            z[i+j] = (uint)p;
+            carry = (uint)(p >> 32);
+        }
+        z[i+yLen] = carry;
+    }
+}
+
+int glvCmp(const uint *a, const uint *b, int len) {
+    for(int i=len-1;i>=0;--i) {
+        if(a[i]>b[i]) return 1;
+        if(a[i]<b[i]) return -1;
+    }
+    return 0;
+}
+
+void glvAdd(const uint *a, const uint *b, int len, uint *r) {
+    uint carry=0U;
+    for(int i=0;i<len;i++) {
+        uint ai=a[i];
+        uint bi=b[i];
+        uint s=ai+bi;
+        uint ri=s+carry;
+        carry=(s<ai)||(ri<s);
+        r[i]=ri;
+    }
+}
+
+void glvSub(const uint *a, const uint *b, int len, uint *r) {
+    uint borrow=0U;
+    for(int i=0;i<len;i++) {
+        uint ai=a[i];
+        uint bi=b[i];
+        uint t=ai-bi;
+        uint ri=t-borrow;
+        borrow=(ai<bi)||(t<borrow);
+        r[i]=ri;
+    }
+}
+
+typedef struct {
+    uint k1[8];
+    uint k2[8];
+    int k1Neg;
+    int k2Neg;
+} GLVSplit;
+
+void splitScalar(const uint k[8], __private GLVSplit *out) {
+    uint prod1[13];
+    glvMulWords(k,8,G1,5,prod1);
+    uint c1[8]={0};
+    for(int i=0;i<5;i++) {
+        uint lo=(i+8<13)?prod1[i+8]:0U;
+        uint hi=(i+9<13)?prod1[i+9]:0U;
+        c1[i]=(lo>>16)|(hi<<16);
+    }
+    uint prod2[13];
+    glvMulWords(k,8,G2,5,prod2);
+    uint c2[8]={0};
+    for(int i=0;i<5;i++) {
+        uint lo=(i+8<13)?prod2[i+8]:0U;
+        uint hi=(i+9<13)?prod2[i+9]:0U;
+        c2[i]=(lo>>16)|(hi<<16);
+    }
+    uint t1[16];
+    uint t2[16];
+    glvMulWords(c1,8,A1,8,t1);
+    glvMulWords(c2,8,A2,8,t2);
+    uint sum[16];
+    glvAdd(t1,t2,16,sum);
+    uint kExt[16];
+    for(int i=0;i<8;i++) kExt[i]=k[i];
+    for(int i=8;i<16;i++) kExt[i]=0U;
+    if(glvCmp(kExt,sum,16)>=0){
+        glvSub(kExt,sum,16,t1);
+        for(int i=0;i<8;i++) out->k1[i]=t1[i];
+        out->k1Neg=0;
+    }else{
+        glvSub(sum,kExt,16,t1);
+        for(int i=0;i<8;i++) out->k1[i]=t1[i];
+        out->k1Neg=1;
+    }
+    glvMulWords(c1,8,B1,8,t1);
+    glvMulWords(c2,8,B2,8,t2);
+    if(glvCmp(t1,t2,16)>=0){
+        glvSub(t1,t2,16,sum);
+        for(int i=0;i<8;i++) out->k2[i]=sum[i];
+        out->k2Neg=0;
+    }else{
+        glvSub(t2,t1,16,sum);
+        for(int i=0;i<8;i++) out->k2[i]=sum[i];
+        out->k2Neg=1;
+    }
+}
+
 int isInfinity(const uint x[8]) {
     for(int i=0;i<8;i++) {
         if(x[i] != 0xffffffffU) return 0;
@@ -148,6 +256,10 @@ void invModP(const uint a[8], uint r[8]) {
     uint256_t aa = toUint256(a);
     uint256_t cc = invModP256k(aa);
     fromUint256(cc, r);
+}
+
+void negModP(const uint a[8], uint r[8]) {
+    subModP(_P, a, r);
 }
 
 void pointDouble(const uint x[8], const uint y[8], uint rx[8], uint ry[8]) {
@@ -218,14 +330,13 @@ void pointAdd(const uint ax[8], const uint ay[8], const uint bx[8], const uint b
     subModP(ry, ay, ry);
 }
 
-void scalarMultiplyBase(const uint k[8], uint rx[8], uint ry[8]) {
+void scalarMultiplySmall(const uint bx[8], const uint by[8], const uint k[8], uint rx[8], uint ry[8]) {
     setPointInfinity(rx, ry);
     uint qx[8];
     uint qy[8];
-    copyBigInt(_GX, qx);
-    copyBigInt(_GY, qy);
-
-    for(int i=0;i<8;i++) {
+    copyBigInt(bx, qx);
+    copyBigInt(by, qy);
+    for(int i=0;i<4;i++) {
         uint word = k[i];
         for(int bit=0; bit<32; ++bit) {
             if(word & 1U) {
@@ -243,6 +354,37 @@ void scalarMultiplyBase(const uint k[8], uint rx[8], uint ry[8]) {
             copyBigInt(ty, qy);
         }
     }
+}
+
+void scalarMultiplyBase(const uint k[8], uint rx[8], uint ry[8]) {
+    GLVSplit s;
+    splitScalar(k, &s);
+    uint r1x[8];
+    uint r1y[8];
+    scalarMultiplySmall(_GX, _GY, s.k1, r1x, r1y);
+    if(s.k1Neg) {
+        uint ny[8];
+        negModP(r1y, ny);
+        copyBigInt(ny, r1y);
+    }
+    if(isZero256(s.k2)) {
+        copyBigInt(r1x, rx);
+        copyBigInt(r1y, ry);
+        return;
+    }
+    uint base2x[8];
+    uint base2y[8];
+    mulModP(_GX, _BETA, base2x);
+    copyBigInt(_GY, base2y);
+    uint r2x[8];
+    uint r2y[8];
+    scalarMultiplySmall(base2x, base2y, s.k2, r2x, r2y);
+    if(s.k2Neg) {
+        uint ny[8];
+        negModP(r2y, ny);
+        copyBigInt(ny, r2y);
+    }
+    pointAdd(r1x, r1y, r2x, r2y, rx, ry);
 }
 unsigned int endian(unsigned int x)
 {
