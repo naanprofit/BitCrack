@@ -237,6 +237,8 @@ void usage()
     printf("                          :+COUNT\n");
     printf("                        Where START, END, COUNT are in hex format\n");
     printf("--stride N              Increment by N keys at a time\n");
+    printf("--L HEX                Lower bound for Pollard search (hex)\n");
+    printf("--U HEX                Upper bound for Pollard search (hex)\n");
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
     printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
@@ -548,7 +550,7 @@ int runPollard()
             }
 
             if(wildSteps > 0) {
-                engine.runWildWalk(segmentStart, wildSteps);
+                engine.runWildWalk(_config.endKey, wildSteps);
             }
 
             if(_resultFound) {
@@ -672,6 +674,8 @@ int main(int argc, char **argv)
     parser.add("-f", "--follow", false);
     parser.add("", "--list-devices", false);
     parser.add("", "--keyspace", true);
+    parser.add("", "--L", true);
+    parser.add("", "--U", true);
     parser.add("", "--continue", true);
     parser.add("", "--share", true);
     parser.add("", "--stride", true);
@@ -724,6 +728,25 @@ int main(int argc, char **argv)
                 listDevices = true;
             } else if(optArg.equals("", "--continue")) {
                 _config.checkpointFile = optArg.arg;
+            } else if(optArg.equals("", "--L")) {
+                try {
+                    _config.startKey = secp256k1::uint256(optArg.arg);
+                    _config.nextKey = _config.startKey;
+                } catch(...) {
+                    throw std::string("invalid argument: expected hex string");
+                }
+                if(_config.startKey.cmp(secp256k1::N) > 0 || _config.startKey.isZero()) {
+                    throw std::string("argument is out of range");
+                }
+            } else if(optArg.equals("", "--U")) {
+                try {
+                    _config.endKey = secp256k1::uint256(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument: expected hex string");
+                }
+                if(_config.endKey.cmp(secp256k1::N) > 0) {
+                    throw std::string("argument is out of range");
+                }
             } else if(optArg.equals("", "--keyspace")) {
                 secp256k1::uint256 start;
                 secp256k1::uint256 end;
@@ -824,7 +847,12 @@ int main(int argc, char **argv)
 			Logger::log(LogLevel::Error, "Error " + opt + ": " + err);
 			return 1;
 		}
-	}
+        }
+
+    if(_config.startKey.cmp(_config.endKey) > 0) {
+        Logger::log(LogLevel::Error, "Invalid argument: L must be <= U");
+        return 1;
+    }
 
 #if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
     if(listDevices) {
