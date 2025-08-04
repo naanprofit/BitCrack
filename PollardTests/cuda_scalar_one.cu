@@ -107,7 +107,7 @@ __device__ static void pointAdd(const unsigned int ax[8], const unsigned int ay[
     subModP(ry, ay, ry);
 }
 
-__device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[8], unsigned int ry[8])
+__device__ static void scalarMultiplyPoint(const unsigned int bx[8], const unsigned int by[8], unsigned long long k, unsigned int rx[8], unsigned int ry[8])
 {
     setPointInfinity(rx, ry);
     if(k == 0ULL) {
@@ -116,8 +116,8 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
 
     unsigned int qx[8];
     unsigned int qy[8];
-    copyBigInt(_GX, qx);
-    copyBigInt(_GY, qy);
+    copyBigInt(bx, qx);
+    copyBigInt(by, qy);
 
     while(k) {
         if(k & 1ULL) {
@@ -135,6 +135,28 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
             copyBigInt(tx, qx);
             copyBigInt(ty, qy);
         }
+    }
+}
+
+__device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[8], unsigned int ry[8])
+{
+    unsigned long long k1 = k;
+    unsigned long long k2 = 0ULL;
+    unsigned int r1x[8];
+    unsigned int r1y[8];
+    scalarMultiplyPoint(_GX, _GY, k1, r1x, r1y);
+    if(k2 != 0ULL) {
+        unsigned int base2x[8];
+        unsigned int base2y[8];
+        mulModP(_GX, _BETA, base2x);
+        copyBigInt(_GY, base2y);
+        unsigned int r2x[8];
+        unsigned int r2y[8];
+        scalarMultiplyPoint(base2x, base2y, k2, r2x, r2y);
+        pointAdd(r1x, r1y, r2x, r2y, rx, ry);
+    } else {
+        copyBigInt(r1x, rx);
+        copyBigInt(r1y, ry);
     }
 }
 

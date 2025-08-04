@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <fstream>
 #include "AddressUtil.h"
+#include "../secp256k1lib/secp256k1_glv.h"
 
 #if BUILD_CUDA
 #include <cuda_runtime.h>
@@ -40,7 +41,10 @@ static inline uint64_t xorshift128plus(RNGState &st)
 
 static secp256k1::ecpoint scalarMultiplyBase(uint64_t k) {
     secp256k1::uint256 scalar(k);
-    return secp256k1::multiplyPoint(scalar, secp256k1::G());
+    auto split = secp256k1::splitScalar(scalar);
+    secp256k1::ecpoint p1 = secp256k1::multiplyPoint(split.k1, secp256k1::G());
+    secp256k1::ecpoint p2 = secp256k1::multiplyPoint(split.k2, secp256k1::glvEndomorphismBasePoint());
+    return secp256k1::addPoints(p1, p2);
 }
 
 static inline uint64_t next_random_step(RNGState &st)
@@ -108,6 +112,14 @@ bool testScalarOne() {
         if(digest[i] != expected[i]) return false;
     }
     return true;
+}
+
+bool testGlvMatchesClassic() {
+    uint64_t sample = 0x123456789abcdefULL;
+    secp256k1::uint256 k(sample);
+    secp256k1::ecpoint classic = secp256k1::multiplyPoint(k, secp256k1::G());
+    secp256k1::ecpoint glv = scalarMultiplyBase(sample);
+    return classic.x == glv.x && classic.y == glv.y;
 }
 
 static bool runOpenCLScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]) {
@@ -194,6 +206,7 @@ bool testGpuScalarOne() {
 int main(){
     int fails=0;
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
+    if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
     if(fails==0) {
