@@ -52,10 +52,10 @@ __constant uint G1[5] = {3944037802U,2430898820U,1808656492U,3525421012U,12422U}
 __constant uint G2[5] = {3838059026U,2141784767U,2284351316U,2127954190U,58435U};
 __constant uint _BETA[8] = {0x7AE96A2BU,0x657C0710U,0x6E64479EU,0xAC3434E9U,0x9CF04975U,0x12F58995U,0xC1396C28U,0x719501EEU};
 
-bool equal(const __private uint *a, const __private uint *b);
-bool isInfinity(const __private uint *x);
-void mulModP(const __private uint *a, const __private uint *b, __private uint *r);
-void ripemd160sha256NoFinal(const __private unsigned int x[8], __private unsigned int digest[5]);
+bool equal(const uint a[8], const uint b[8]);
+bool isInfinity(const uint x[8]);
+void mulModP(const uint a[8], const uint b[8], __private uint r[8]);
+void ripemd160sha256NoFinal(const uint x[8], __private uint digest[5]);
 
 int isZero256(const uint a[8]) {
     for(int i=0;i<8;i++) {
