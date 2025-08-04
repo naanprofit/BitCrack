@@ -4,6 +4,7 @@
 #include <iterator>
 #include <vector>
 #include <string>
+#include <iostream>
 #include "clContext.h"
 #include "clutil.h"
 
@@ -110,11 +111,27 @@ void runWalk(PollardEngine &engine,
     std::string pollard((std::istreambuf_iterator<char>(pollardFile)), std::istreambuf_iterator<char>());
 
     std::string src = sha + secp + rmd + pollard;
-    cl::CLProgram prog(ctx, src.c_str());
-    cl_program program = prog.getProgram();
 
+    const char *srcPtr = src.c_str();
+    size_t srcLen = src.size();
     cl_int err = 0;
+
+    cl_program program = clCreateProgramWithSource(ctx.getContext(), 1, &srcPtr, &srcLen, &err);
+    clCall(err);
+
+    err = clBuildProgram(program, 1, &devId, NULL, NULL, NULL);
+    if(err != CL_SUCCESS) {
+        size_t logSize = 0;
+        clGetProgramBuildInfo(program, devId, CL_PROGRAM_BUILD_LOG, 0, NULL, &logSize);
+        std::vector<char> log(logSize);
+        clGetProgramBuildInfo(program, devId, CL_PROGRAM_BUILD_LOG, logSize, log.data(), NULL);
+        std::cerr << std::string(log.begin(), log.end()) << std::endl;
+        clReleaseProgram(program);
+        throw cl::CLException(err);
+    }
+
     cl_kernel kernel = clCreateKernel(program, "pollard_walk", &err);
+    clCall(err);
 
     cl_uint maxOut = static_cast<cl_uint>(steps * global);
 
@@ -254,6 +271,7 @@ void runWalk(PollardEngine &engine,
     if(d_startY) clReleaseMemObject(d_startY);
     clReleaseMemObject(d_windows);
     clReleaseKernel(kernel);
+    clReleaseProgram(program);
 }
 } // namespace
 

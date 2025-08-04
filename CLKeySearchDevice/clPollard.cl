@@ -94,6 +94,156 @@ void next_random_step(__private RNGState *state, uint step[8]) {
         }
     } while(isZero256(step) || ge256(step, ORDER));
 }
+
+static inline uint256_t toUint256(const uint a[8]) {
+    uint256_t r;
+    for(int i=0;i<8;i++) r.v[i] = a[i];
+    return r;
+}
+
+static inline void fromUint256(uint256_t a, uint r[8]) {
+    for(int i=0;i<8;i++) r[i] = a.v[i];
+}
+
+void copyBigInt(const uint src[8], uint dest[8]) {
+    for(int i=0;i<8;i++) dest[i] = src[i];
+}
+
+int equal(const uint a[8], const uint b[8]) {
+    for(int i=0;i<8;i++) {
+        if(a[i] != b[i]) return 0;
+    }
+    return 1;
+}
+
+int isInfinity(const uint x[8]) {
+    for(int i=0;i<8;i++) {
+        if(x[i] != 0xffffffffU) return 0;
+    }
+    return 1;
+}
+
+void setPointInfinity(uint x[8], uint y[8]) {
+    for(int i=0;i<8;i++) {
+        x[i] = 0xffffffffU;
+        y[i] = 0xffffffffU;
+    }
+}
+
+void addModP(const uint a[8], const uint b[8], uint r[8]) {
+    uint256_t aa = toUint256(a);
+    uint256_t bb = toUint256(b);
+    uint256_t cc = addModP256k(aa, bb);
+    fromUint256(cc, r);
+}
+
+void subModP(const uint a[8], const uint b[8], uint r[8]) {
+    uint256_t aa = toUint256(a);
+    uint256_t bb = toUint256(b);
+    uint256_t cc = subModP256k(aa, bb);
+    fromUint256(cc, r);
+}
+
+void invModP(const uint a[8], uint r[8]) {
+    uint256_t aa = toUint256(a);
+    uint256_t cc = invModP256k(aa);
+    fromUint256(cc, r);
+}
+
+void pointDouble(const uint x[8], const uint y[8], uint rx[8], uint ry[8]) {
+    if(isInfinity(x)) {
+        setPointInfinity(rx, ry);
+        return;
+    }
+
+    uint x2[8];
+    uint three_x2[8];
+    uint two_y[8];
+    uint inv[8];
+    uint lambda[8];
+    uint lambda2[8];
+    uint k[8];
+
+    mulModP(x, x, x2);
+    addModP(x2, x2, three_x2);
+    addModP(three_x2, x2, three_x2);
+
+    addModP(y, y, two_y);
+    invModP(two_y, inv);
+    mulModP(three_x2, inv, lambda);
+
+    mulModP(lambda, lambda, lambda2);
+    subModP(lambda2, x, rx);
+    subModP(rx, x, rx);
+
+    subModP(x, rx, k);
+    mulModP(lambda, k, ry);
+    subModP(ry, y, ry);
+}
+
+void pointAdd(const uint ax[8], const uint ay[8], const uint bx[8], const uint by[8], uint rx[8], uint ry[8]) {
+    if(isInfinity(ax)) {
+        copyBigInt(bx, rx);
+        copyBigInt(by, ry);
+        return;
+    }
+    if(isInfinity(bx)) {
+        copyBigInt(ax, rx);
+        copyBigInt(ay, ry);
+        return;
+    }
+    if(equal(ax, bx) && equal(ay, by)) {
+        pointDouble(ax, ay, rx, ry);
+        return;
+    }
+
+    uint rise[8];
+    uint run[8];
+    uint inv[8];
+    uint lambda[8];
+    uint lambda2[8];
+    uint k[8];
+
+    subModP(by, ay, rise);
+    subModP(bx, ax, run);
+    invModP(run, inv);
+    mulModP(rise, inv, lambda);
+
+    mulModP(lambda, lambda, lambda2);
+    subModP(lambda2, ax, rx);
+    subModP(rx, bx, rx);
+
+    subModP(ax, rx, k);
+    mulModP(lambda, k, ry);
+    subModP(ry, ay, ry);
+}
+
+void scalarMultiplyBase(const uint k[8], uint rx[8], uint ry[8]) {
+    setPointInfinity(rx, ry);
+    uint qx[8];
+    uint qy[8];
+    copyBigInt(_GX, qx);
+    copyBigInt(_GY, qy);
+
+    for(int i=0;i<8;i++) {
+        uint word = k[i];
+        for(int bit=0; bit<32; ++bit) {
+            if(word & 1U) {
+                uint tx[8];
+                uint ty[8];
+                pointAdd(rx, ry, qx, qy, tx, ty);
+                copyBigInt(tx, rx);
+                copyBigInt(ty, ry);
+            }
+            word >>= 1U;
+            uint tx[8];
+            uint ty[8];
+            pointDouble(qx, qy, tx, ty);
+            copyBigInt(tx, qx);
+            copyBigInt(ty, qy);
+        }
+    }
+}
 unsigned int endian(unsigned int x)
 {
     return (x << 24) | ((x << 8) & 0x00ff0000) | ((x >> 8) & 0x0000ff00) | (x >> 24);
