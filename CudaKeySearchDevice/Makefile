@@ -19,12 +19,12 @@ cuda:
 
 ;for file in ${MATHSRC} ; do\
 ;   base=$(basename $$file); \
-;   ${NVCC} -c $$file -o $$base".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;   ${NVCC} -c $$file -o ${CUDA_MATH}/$$base".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
-;${NVCC} ${NVCCFLAGS} -dlink -o cuda_libs.o *.o -lcudadevrt -lcudart
+;${NVCC} ${NVCCFLAGS} -dlink -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
 
-;ar rvs ${LIBDIR}/lib$(NAME).a *.o
+;ar rvs ${LIBDIR}/lib$(NAME).a *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o
 
 clean:
 ;rm -f *.o
