@@ -71,7 +71,7 @@ static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5]
         };
 
         for(int i = 0; i < 5; ++i) {
-                // Remove the IV contribution from each 32-bit word
+                // Remove the IV contribution from each word without rotating the index
                 hOut[i] = hIn[i] - iv[i];
         }
 }

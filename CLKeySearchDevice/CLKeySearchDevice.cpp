@@ -37,7 +37,7 @@ static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5]
     };
 
     for(int i = 0; i < 5; ++i) {
-        // Subtract the IV from each word to match device-side constants
+        // Subtract the matching IV value; avoid rotating the index
         hOut[i] = hIn[i] - iv[i];
     }
 }
