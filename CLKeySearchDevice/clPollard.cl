@@ -51,6 +51,10 @@ static const uint G1[5] = {3944037802U,2430898820U,1808656492U,3525421012U,12422
 static const uint G2[5] = {3838059026U,2141784767U,2284351316U,2127954190U,58435U};
 static const uint _BETA[8] = {0x7AE96A2BU,0x657C0710U,0x6E64479EU,0xAC3434E9U,0x9CF04975U,0x12F58995U,0xC1396C28U,0x719501EEU};
 
+bool equal(const __private uint *a, const __private uint *b);
+bool isInfinity(const __private uint *x);
+void mulModP(const __private uint *a, const __private uint *b, __private uint *r);
+
 int isZero256(const uint a[8]) {
     for(int i=0;i<8;i++) {
         if(a[i] != 0U) return 0;
@@ -58,7 +62,7 @@ int isZero256(const uint a[8]) {
     return 1;
 }
 
-int ge256(const uint a[8], const uint b[8]) {
+int ge256(const __private uint *a, const __constant uint *b) {
     for(int i=7;i>=0;--i) {
         if(a[i] > b[i]) return 1;
         if(a[i] < b[i]) return 0;
@@ -66,7 +70,7 @@ int ge256(const uint a[8], const uint b[8]) {
     return 1;
 }
 
-void sub256(const uint a[8], const uint b[8], uint r[8]) {
+void sub256(const __private uint *a, const __constant uint *b, __private uint *r) {
     uint borrow = 0U;
     for(int i=0;i<8;i++) {
         uint ai = a[i];
@@ -115,13 +119,6 @@ static inline void fromUint256(uint256_t a, uint r[8]) {
 
 void copyBigInt(const uint src[8], uint dest[8]) {
     for(int i=0;i<8;i++) dest[i] = src[i];
-}
-
-int equal(const uint a[8], const uint b[8]) {
-    for(int i=0;i<8;i++) {
-        if(a[i] != b[i]) return 0;
-    }
-    return 1;
 }
 
 void glvMulWords(const uint *x, int xLen, const uint *y, int yLen, uint *z) {
@@ -224,13 +221,6 @@ void splitScalar(const uint k[8], __private GLVSplit *out) {
     }
 }
 
-int isInfinity(const uint x[8]) {
-    for(int i=0;i<8;i++) {
-        if(x[i] != 0xffffffffU) return 0;
-    }
-    return 1;
-}
-
 void setPointInfinity(uint x[8], uint y[8]) {
     for(int i=0;i<8;i++) {
         x[i] = 0xffffffffU;
@@ -330,7 +320,7 @@ void pointAdd(const uint ax[8], const uint ay[8], const uint bx[8], const uint b
     subModP(ry, ay, ry);
 }
 
-void scalarMultiplySmall(const uint bx[8], const uint by[8], const uint k[8], uint rx[8], uint ry[8]) {
+void scalarMultiplySmall(const __private uint *bx, const __private uint *by, const __private uint *k, __private uint *rx, __private uint *ry) {
     setPointInfinity(rx, ry);
     uint qx[8];
     uint qy[8];
@@ -356,12 +346,16 @@ void scalarMultiplySmall(const uint bx[8], const uint by[8], const uint k[8], ui
     }
 }
 
-void scalarMultiplyBase(const uint k[8], uint rx[8], uint ry[8]) {
+void scalarMultiplyBase(const __private uint *k, __private uint *rx, __private uint *ry) {
     GLVSplit s;
     splitScalar(k, &s);
+    uint base1x[8];
+    uint base1y[8];
+    copyBigInt(_GX, base1x);
+    copyBigInt(_GY, base1y);
     uint r1x[8];
     uint r1y[8];
-    scalarMultiplySmall(_GX, _GY, s.k1, r1x, r1y);
+    scalarMultiplySmall(base1x, base1y, s.k1, r1x, r1y);
     if(s.k1Neg) {
         uint ny[8];
         negModP(r1y, ny);
@@ -374,7 +368,11 @@ void scalarMultiplyBase(const uint k[8], uint rx[8], uint ry[8]) {
     }
     uint base2x[8];
     uint base2y[8];
-    mulModP(_GX, _BETA, base2x);
+    uint gx[8];
+    uint beta[8];
+    copyBigInt(_GX, gx);
+    copyBigInt(_BETA, beta);
+    mulModP(gx, beta, base2x);
     copyBigInt(_GY, base2y);
     uint r2x[8];
     uint r2y[8];
