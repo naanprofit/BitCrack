@@ -2,6 +2,7 @@
 #include "CryptoUtil.h"
 
 #include "AddressUtil.h"
+#include "util.h"
 
 
 static const std::string BASE58_STRING = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -53,14 +54,10 @@ void Base58::toHash160(const std::string &s, unsigned int hash[5])
 
         value.exportWords(words, 6, secp256k1::uint256::BigEndian);
 
-        // Extract hash words (ignoring checksum) and convert from big-endian
-        // to little-endian word order and byte order
+        // Extract hash words (ignoring the checksum) and convert each to
+        // little-endian order so bit windows are measured from the LSB.
         for(int i = 0; i < 5; i++) {
-                unsigned int w = words[4 - i];
-                hash[i] = ((w & 0x000000ffU) << 24) |
-                          ((w & 0x0000ff00U) << 8)  |
-                          ((w & 0x00ff0000U) >> 8)  |
-                          ((w & 0xff000000U) >> 24);
+                hash[i] = util::endian(words[4 - i]);
         }
 }
 
