@@ -13,7 +13,7 @@ __device__ static void doRMD160FinalRound(const unsigned int hIn[5], unsigned in
         0xc3d2e1f0
     };
     for(int i = 0; i < 5; i++) {
-        hOut[i] = hIn[i] + iv[(i + 1) % 5];
+        hOut[i] = hIn[i] + iv[i];
     }
 }
 
