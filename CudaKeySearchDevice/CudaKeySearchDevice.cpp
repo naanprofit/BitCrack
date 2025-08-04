@@ -7,19 +7,19 @@
 #include <vector>
 
 struct CudaPollardMatch {
-    unsigned long long k[4];
+    unsigned int k[8];
     unsigned int hash[5];
 };
 
 extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
-                                              unsigned int *outCount,
-                                              unsigned int maxOut,
-                                              const unsigned long long *seeds,
-                                              const unsigned long long *starts,
-                                              const unsigned int *startX,
-                                              const unsigned int *startY,
-                                              unsigned int steps,
-                                              unsigned int windowBits);
+                                             unsigned int *outCount,
+                                             unsigned int maxOut,
+                                             const unsigned int *seeds,
+                                             const unsigned int *starts,
+                                             const unsigned int *startX,
+                                             const unsigned int *startY,
+                                             unsigned int steps,
+                                             unsigned int windowBits);
 
 void CudaKeySearchDevice::cudaCall(cudaError_t err)
 {
@@ -336,25 +336,26 @@ secp256k1::uint256 CudaKeySearchDevice::getNextKey()
 
 void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed)
 {
-    (void)start;
     _pollardBuffer.clear();
 
     CudaPollardMatch *d_out = nullptr;
     unsigned int *d_count = nullptr;
-    unsigned long long *d_seeds = nullptr;
-    unsigned long long *d_starts = nullptr;
+    unsigned int *d_seeds = nullptr;
+    unsigned int *d_starts = nullptr;
     cudaStream_t stream;
     cudaCall(cudaStreamCreate(&stream));
     cudaCall(cudaMalloc(&d_out, sizeof(CudaPollardMatch) * steps));
     cudaCall(cudaMalloc(&d_count, sizeof(unsigned int)));
-    cudaCall(cudaMalloc(&d_seeds, sizeof(unsigned long long)));
-    cudaCall(cudaMalloc(&d_starts, sizeof(unsigned long long)));
+    cudaCall(cudaMalloc(&d_seeds, sizeof(unsigned int) * 8));
+    cudaCall(cudaMalloc(&d_starts, sizeof(unsigned int) * 8));
     cudaCall(cudaMemset(d_count, 0, sizeof(unsigned int)));
 
-    unsigned long long h_seed = seed;
-    unsigned long long h_start = 0ULL;
-    cudaCall(cudaMemcpy(d_seeds, &h_seed, sizeof(unsigned long long), cudaMemcpyHostToDevice));
-    cudaCall(cudaMemcpy(d_starts, &h_start, sizeof(unsigned long long), cudaMemcpyHostToDevice));
+    unsigned int h_seed[8];
+    unsigned int h_start[8];
+    secp256k1::uint256(seed).exportWords(h_seed, 8);
+    start.exportWords(h_start, 8);
+    cudaCall(cudaMemcpy(d_seeds, h_seed, sizeof(unsigned int) * 8, cudaMemcpyHostToDevice));
+    cudaCall(cudaMemcpy(d_starts, h_start, sizeof(unsigned int) * 8, cudaMemcpyHostToDevice));
 
     pollardRandomWalk<<<1, 1, 0, stream>>>(d_out, d_count,
                                            static_cast<unsigned int>(steps),
@@ -371,9 +372,8 @@ void CudaKeySearchDevice::runPollard(const secp256k1::uint256 &start, uint64_t s
 
     for(unsigned int i = 0; i < h_count; ++i) {
         PollardMatch m;
-        for(int j = 0; j < 4; ++j) {
-            m.scalar.v[j * 2]     = static_cast<unsigned int>(h_out[i].k[j] & 0xFFFFFFFFULL);
-            m.scalar.v[j * 2 + 1] = static_cast<unsigned int>(h_out[i].k[j] >> 32);
+        for(int j = 0; j < 8; ++j) {
+            m.scalar.v[j] = h_out[i].k[j];
         }
         std::memcpy(m.hash, h_out[i].hash, sizeof(m.hash));
         _pollardBuffer.push(m);

@@ -351,7 +351,24 @@ void PollardEngine::processWindow(const PollardWindow &w) {
         return;
     }
 
-    addConstraint(w.targetIdx, modBits, w.scalarFragment);
+    uint256 val = w.scalarFragment;
+    if(modBits < 256) {
+        unsigned int word = modBits / 32;
+        unsigned int bit = modBits % 32;
+        if(bit) {
+            unsigned int mask = (1u << bit) - 1u;
+            val.v[word] &= mask;
+            for(unsigned int i = word + 1; i < 8; ++i) {
+                val.v[i] = 0u;
+            }
+        } else {
+            for(unsigned int i = word; i < 8; ++i) {
+                val.v[i] = 0u;
+            }
+        }
+    }
+
+    addConstraint(w.targetIdx, modBits, val);
     _targets[w.targetIdx].seenOffsets.insert(w.offset);
 
     _reconstructionAttempts++;
