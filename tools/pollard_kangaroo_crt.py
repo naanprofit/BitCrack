@@ -118,9 +118,10 @@ def worker(args):
     target, ws, offsets, mask, L_i, U_i, max_steps, direction, verbose = args
     name = current_process().name
 
-    # precompute the bits we want to match:
+    # precompute the bits we want to match (offsets are measured from the
+    # least-significant bit, consistent with the C++ Pollard engine):
     want = {
-        off: (target >> (160 - (off + ws))) & (mask - 1)
+        off: (target >> off) & (mask - 1)
         for off in offsets
     }
     found = {}
@@ -135,15 +136,12 @@ def worker(args):
         pub = scalar_multiplication(a)
         sha = hashlib.sha256(pub).digest()
         rmd = hashlib.new('ripemd160', sha).digest()
-        val = int.from_bytes(rmd, 'big')
+        val = int.from_bytes(rmd, 'little')
 
         for off, w in want.items():
             if off in found:
                 continue
-            shift = 160 - (off + ws)
-            if shift < 0:
-                continue
-            if ((val >> shift) & (mask - 1)) == w:
+            if ((val >> off) & (mask - 1)) == w:
                 found[off] = (a >> off) & (mask - 1)
                 if verbose:
                     print(f"[{name}] matched off={off} -> {found[off]}")
@@ -204,6 +202,7 @@ def main():
         max_off = 160 - ws
         step    = max(1, max_off // (args.offsets_count - 1))
         offsets = [i*step for i in range(args.offsets_count)]
+    # Offsets are measured from the least-significant bit, consistent with the C++ Pollard engine.
 
     max_steps = args.max_steps or span
     # ensure we never do more than the subrange length
@@ -218,7 +217,7 @@ def main():
         print(f"Range=[{L},{U}], ws={ws}, offsets={offsets}")
         print(f"workers={n} (tame={n_tame}, wild={n_wild}), max_steps={max_steps}")
 
-    target = int(args.target_rmd, 16)
+    target = int.from_bytes(bytes.fromhex(args.target_rmd), 'little')
     chunk  = span // n
     jobs   = []
 
