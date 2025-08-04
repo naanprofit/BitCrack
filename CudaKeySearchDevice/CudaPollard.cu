@@ -3,6 +3,7 @@
 #include "sha256.cuh"   // SHA256 hashing for public keys
 #include "ripemd160.cuh" // RIPEMD160 finalisation
 #include "secp256k1.cuh" // EC point operations
+#include "ptx.cuh"       // byte order helpers
 
 __device__ void hashPublicKeyCompressed(const unsigned int*, unsigned int, unsigned int*);
 
@@ -357,6 +358,9 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
             // py[7] holds the least significant word; py[7] & 1 yields the parity bit
             hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
+            for(int j = 0; j < 5; ++j) {
+                finalHash[j] = endian(finalHash[j]);
+            }
 
             unsigned int idx = atomicAdd(outCount, 1u);
             if(idx < maxOut) {
@@ -428,6 +432,9 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             unsigned int finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
+            for(int j = 0; j < 5; ++j) {
+                finalHash[j] = endian(finalHash[j]);
+            }
 
             for(unsigned int w = 0; w < windowCount; ++w) {
                 TargetWindow tw = windows[w];
@@ -467,6 +474,9 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             unsigned int finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
+            for(int j = 0; j < 5; ++j) {
+                finalHash[j] = endian(finalHash[j]);
+            }
 
             for(unsigned int w = 0; w < windowCount; ++w) {
                 TargetWindow tw = windows[w];

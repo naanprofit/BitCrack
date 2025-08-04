@@ -204,6 +204,9 @@ __kernel void pollard_walk(__global PollardWindow *out,
             uint finalHash[5];
             hashPublicKeyCompressed(px, py[7], digest);
             doRMD160FinalRound(digest, finalHash);
+            for(int j = 0; j < 5; j++) {
+                finalHash[j] = endian(finalHash[j]);
+            }
 
             for(uint w = 0; w < windowCount; w++) {
                 TargetWindow tw = windows[w];
@@ -243,6 +246,9 @@ __kernel void pollard_walk(__global PollardWindow *out,
             uint finalHash[5];
             hashPublicKeyCompressed(px, py[7], digest);
             doRMD160FinalRound(digest, finalHash);
+            for(int j = 0; j < 5; j++) {
+                finalHash[j] = endian(finalHash[j]);
+            }
 
             for(uint w = 0; w < windowCount; w++) {
                 TargetWindow tw = windows[w];
