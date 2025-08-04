@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <math.h>
 #include <vector>
+#include <stdint.h>
 
 #include "KeySearchDevice.h"
 
@@ -23,32 +24,34 @@ __constant__ unsigned long long _BLOOM_FILTER_MASK64[1];
 
 __constant__ unsigned int _USE_BLOOM_FILTER[1];
 
+// Simple 160-bit container represented as five 32-bit little-endian words.
 struct Hash160 {
-        unsigned int v[5];
+        uint32_t v[5];
 };
 
-__device__ static Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+// Extract ``bits`` bits from ``h`` starting at ``offset``.
+__device__ static Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bits)
 {
         Hash160 out;
         for(int i = 0; i < 5; ++i) {
                 out.v[i] = 0u;
         }
-        unsigned int word = offset / 32;
-        unsigned int bit = offset % 32;
-        unsigned int span = bit + bits;
-        unsigned int words = (span + 31) / 32;
-        for(unsigned int i = 0; i < words && word + i < 5; ++i) {
-                unsigned long long val = ((unsigned long long)h[word + i]) >> bit;
+        uint32_t word = offset / 32;
+        uint32_t bit  = offset % 32;
+        uint32_t span = bit + bits;
+        uint32_t words = (span + 31) / 32;
+        for(uint32_t i = 0; i < words && word + i < 5; ++i) {
+                uint64_t val = ((uint64_t)h[word + i]) >> bit;
                 if(bit && word + i + 1 < 5) {
-                        val |= ((unsigned long long)h[word + i + 1]) << (32 - bit);
+                        val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
                 }
-                out.v[i] = (unsigned int)(val & 0xffffffffULL);
+                out.v[i] = (uint32_t)(val & 0xffffffffULL);
         }
         if(span % 32) {
-                unsigned int mask = (1u << (span % 32)) - 1u;
+                uint32_t mask = (1u << (span % 32)) - 1u;
                 out.v[words - 1] &= mask;
         }
-        for(unsigned int i = words; i < 5; ++i) {
+        for(uint32_t i = words; i < 5; ++i) {
                 out.v[i] = 0u;
         }
         return out;

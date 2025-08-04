@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <cstdint>
 #include "clContext.h"
 #include "clutil.h"
 
@@ -35,24 +36,24 @@ uint256 CLPollardDevice::maskBits(unsigned int bits) {
     return m;
 }
 
-uint256 CLPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
+uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
     uint256 out(0);
-    unsigned int word = offset / 32;
-    unsigned int bit = offset % 32;
-    unsigned int span = bit + bits;
-    unsigned int words = (span + 31) / 32;
-    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+    uint32_t word  = offset / 32;
+    uint32_t bit   = offset % 32;
+    uint32_t span  = bit + bits;
+    uint32_t words = (span + 31) / 32;
+    for(uint32_t i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
             val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
         }
-        out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
+        out.v[i] = static_cast<uint32_t>(val & 0xffffffffULL);
     }
     if(span % 32) {
-        unsigned int mask = (1u << (span % 32)) - 1u;
+        uint32_t mask = (1u << (span % 32)) - 1u;
         out.v[words - 1] &= mask;
     }
-    for(unsigned int i = words; i < 8; ++i) {
+    for(uint32_t i = words; i < 8; ++i) {
         out.v[i] = 0u;
     }
     return out;

@@ -419,10 +419,11 @@ void hashPublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsi
 
 // Extract ``bits`` bits starting at ``offset`` from the 160-bit RIPEMD160
 // digest ``h``. Bits are interpreted in little-endian order and returned as a
-// 160-bit value with higher bits cleared.
+// 160-bit value with higher bits cleared.  The result is stored as five
+// 32-bit little-endian words.
 typedef struct { uint v[5]; } Hash160;
 
-Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+Hash160 hashWindow(const uint h[5], uint offset, uint bits)
 {
     Hash160 out; 
     for(int i=0;i<5;i++) out.v[i]=0u;

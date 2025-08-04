@@ -211,6 +211,39 @@ bool testHashWindowLEK1() {
     return got == expected;
 }
 
+bool testHashWindowK1Windows() {
+    const unsigned int be[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    unsigned int le[5];
+    // Convert big-endian digest to little-endian words
+    secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
+    struct Case { unsigned int off; unsigned int bits; std::vector<unsigned int> words; };
+    std::vector<Case> cases = {
+        {0, 80,  {0xd63b43f1u, 0x23a3b3d1u, 0x00009454u}},
+        {40, 80, {0x5423a3b3u, 0x19451c94u, 0x00d49691u}},
+        {80, 80, {0x9119451cu, 0x1e75d496u, 0x0000e876u}},
+        {0, 96,  {0xd63b43f1u, 0x23a3b3d1u, 0x451c9454u}},
+        {32, 96, {0x23a3b3d1u, 0x451c9454u, 0xd4969119u}},
+        {64, 96, {0x451c9454u, 0xd4969119u, 0xe8761e75u}}
+    };
+    for(const auto &c : cases) {
+        secp256k1::uint256 got = hashWindowLE(le, c.off, c.bits);
+        unsigned int words = (c.bits + 31) / 32;
+        for(unsigned int i = 0; i < words; ++i) {
+            if(got.v[i] != c.words[i]) return false;
+        }
+        for(unsigned int i = words; i < 8; ++i) {
+            if(got.v[i] != 0u) return false;
+        }
+    }
+    return true;
+}
+
 class StubDevice : public PollardDevice {
     PollardMatch _m;
     bool _sent = false;
@@ -342,6 +375,7 @@ int main(){
     if(!testPollardHash160FindsKey()) { std::cout<<"pollard hash160 failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
+    if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
