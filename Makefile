@@ -24,7 +24,7 @@ CXXFLAGS=-O2 -std=c++11
 COMPUTE_CAP=89
 
 # Path to a specific CUDA toolkit installation
-CUDA_HOME ?= /usr/local/cuda-12.0
+CUDA_HOME ?= /usr/local/cuda-12.8
 CUDA_BIN=${CUDA_HOME}/bin
 
 # Explicitly reference compiler and linker from the same toolkit
