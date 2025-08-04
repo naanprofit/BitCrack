@@ -85,6 +85,10 @@ public:
     // without a GPU.  Ownership of ``device`` is transferred to the engine.
     void setDevice(std::unique_ptr<PollardDevice> device);
 
+    // Public wrapper exposing the internal hashWindow helper
+    static secp256k1::uint256 publicHashWindow(const unsigned int h[5], unsigned int offset,
+                                               unsigned int bits);
+
 private:
     struct TargetState {
         std::array<unsigned int,5> hash;      // target RIPEMD160

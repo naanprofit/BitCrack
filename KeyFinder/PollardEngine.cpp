@@ -536,3 +536,8 @@ uint256 PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
     return hashWindowLE(h, offset, bits);
 }
 
+uint256 PollardEngine::publicHashWindow(const unsigned int h[5], unsigned int offset,
+                                        unsigned int bits) {
+    return hashWindow(h, offset, bits);
+}
+
