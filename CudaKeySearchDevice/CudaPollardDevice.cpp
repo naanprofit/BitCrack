@@ -3,10 +3,6 @@
 #include <vector>
 #include <cstring>
 
-static inline unsigned int bswap32(unsigned int x) {
-    return (x << 24) | ((x << 8) & 0x00ff0000U) |
-           ((x >> 8) & 0x0000ff00U) | (x >> 24);
-}
 
 using namespace secp256k1;
 
@@ -71,10 +67,9 @@ CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
     : _engine(engine), _windowBits(windowBits), _offsets(offsets), _debug(debug) {
     _targets.reserve(targets.size());
     for(const auto &t : targets) {
+        uint256 v = uint256::importBigEndian(t.data(), 5);
         std::array<unsigned int,5> le;
-        for(int i = 0; i < 5; ++i) {
-            le[i] = bswap32(t[4 - i]);
-        }
+        v.exportWords(le.data(), 5);
         _targets.push_back(le);
     }
 }

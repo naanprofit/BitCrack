@@ -195,6 +195,21 @@ bool testHashWindowLEPython() {
     return got == expected;
 }
 
+bool testHashWindowLEK1() {
+    const unsigned int be[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    secp256k1::uint256 expected = secp256k1::uint256::importBigEndian(be, 5);
+    unsigned int le[5];
+    expected.exportWords(le, 5);
+    secp256k1::uint256 got = hashWindowLE(le, 0, 160);
+    return got == expected;
+}
+
 static bool runOpenCLScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]) {
 #if BUILD_OPENCL
     try {
@@ -282,6 +297,7 @@ int main(){
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
+    if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
