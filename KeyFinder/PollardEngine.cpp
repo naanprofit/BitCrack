@@ -31,20 +31,35 @@ public:
     explicit CPUPollardDevice(unsigned int windowBits)
         : _windowBits(windowBits), _buffer(1024) {}
 
-    void startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) override;
-    void startWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) override;
+    void startTameWalk(const uint256 &start, uint64_t steps,
+                       uint64_t seed, bool sequential) override;
+    void startWildWalk(const uint256 &start, uint64_t steps,
+                       uint64_t seed, bool sequential) override;
     bool popResult(PollardMatch &out) override { return _buffer.pop(out); }
 };
 
-void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
+void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
+                                     uint64_t seed, bool sequential) {
     _buffer.clear();
+    uint256 k = start;
+    ecpoint p = multiplyPoint(k, G());
+    if(sequential) {
+        for(uint64_t i = 0; i < steps; ++i) {
+            if(checkPoint(p)) {
+                PollardMatch m;
+                m.scalar = k;
+                Hash::hashPublicKeyCompressed(p, m.hash);
+                _buffer.push(m);
+            }
+            k = k.add(1);
+            p = addPoints(p, G());
+        }
+        return;
+    }
+
     std::mt19937_64 rng(seed);
     uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
     std::uniform_int_distribution<uint64_t> dist(1, maxStep);
-
-    uint256 k = start;
-    ecpoint p = multiplyPoint(k, G());
-
     for(uint64_t i = 0; i < steps; ++i) {
         uint64_t step = dist(rng);
         uint256 stepVal(step);
@@ -59,23 +74,43 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint6
     }
 }
 
-void CPUPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
+void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
+                                     uint64_t seed, bool sequential) {
     _buffer.clear();
+    uint256 k = start;
+    ecpoint p = multiplyPoint(k, G());
+    if(sequential) {
+        ecpoint negG = G();
+        negG.y = negModP(negG.y);
+        for(uint64_t i = 0; i < steps; ++i) {
+            if(checkPoint(p)) {
+                PollardMatch m;
+                m.scalar = k;
+                Hash::hashPublicKeyCompressed(p, m.hash);
+                _buffer.push(m);
+            }
+            if(k.isZero()) {
+                break;
+            }
+            k = k.sub(1);
+            p = addPoints(p, negG);
+        }
+        return;
+    }
+
     std::mt19937_64 rng(seed);
     uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
     std::uniform_int_distribution<uint64_t> dist(1, maxStep);
 
-    ecpoint p = start;
-    uint256 k(0);
-
+    uint256 kOffset(0);
     for(uint64_t i = 0; i < steps; ++i) {
         uint64_t step = dist(rng);
         uint256 stepVal(step);
-        k = k.add(stepVal);
+        kOffset = kOffset.add(stepVal);
         p = addPoints(p, multiplyPoint(stepVal, G()));
         if(checkPoint(p)) {
             PollardMatch m;
-            m.scalar = k;
+            m.scalar = kOffset;
             Hash::hashPublicKeyCompressed(p, m.hash);
             _buffer.push(m);
         }
@@ -192,9 +227,11 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              const uint256 &L,
                              const uint256 &U,
                              unsigned int batchSize,
-                             unsigned int pollInterval)
+                             unsigned int pollInterval,
+                             bool sequential)
     : _callback(cb), _windowBits(windowBits), _offsets(offsets),
-      _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U) {
+      _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
+      _sequential(sequential) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -379,7 +416,8 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
     _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
     _startTime = std::chrono::steady_clock::now();
 
-    _device->startTameWalk(start, steps, seed);
+    const uint256 &s = _sequential ? _L : start;
+    _device->startTameWalk(s, steps, seed, _sequential);
     pollDevice();
 
     auto end = std::chrono::steady_clock::now();
@@ -394,11 +432,11 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
                 util::format(_reconstructionAttempts));
 }
 
-void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps) {
+void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps) {
     runWildWalk(start, steps, std::random_device{}());
 }
 
-void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
+void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
     if(!_device) {
         return;
     }
@@ -406,7 +444,8 @@ void PollardEngine::runWildWalk(const ecpoint &start, uint64_t steps, uint64_t s
     _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
     _startTime = std::chrono::steady_clock::now();
 
-    _device->startWildWalk(start, steps, seed);
+    const uint256 &s = _sequential ? _U : start;
+    _device->startWildWalk(s, steps, seed, _sequential);
     pollDevice();
 
     auto end = std::chrono::steady_clock::now();

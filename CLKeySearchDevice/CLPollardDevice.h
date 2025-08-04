@@ -19,8 +19,10 @@ public:
                     const std::vector<unsigned int> &offsets,
                     const std::vector<std::array<unsigned int,5>> &targets);
 
-    void startTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed) override;
-    void startWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed) override;
+    void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
+                       uint64_t seed, bool sequential) override;
+    void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
+                       uint64_t seed, bool sequential) override;
     bool popResult(PollardMatch &out) override { (void)out; return false; }
 };
 
