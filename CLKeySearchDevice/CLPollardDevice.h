@@ -10,11 +10,13 @@ class CLPollardDevice : public PollardDevice {
     unsigned int _windowBits;
     std::vector<unsigned int> _offsets;
     std::vector<std::array<unsigned int,5>> _targets;
+    bool _debug;
 public:
     CLPollardDevice(PollardEngine &engine,
                     unsigned int windowBits,
                     const std::vector<unsigned int> &offsets,
-                    const std::vector<std::array<unsigned int,5>> &targets);
+                    const std::vector<std::array<unsigned int,5>> &targets,
+                    bool debug);
 
     static secp256k1::uint256 maskBits(unsigned int bits);
     static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits);

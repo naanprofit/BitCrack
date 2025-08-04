@@ -58,8 +58,10 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
 CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      unsigned int windowBits,
                                      const std::vector<unsigned int> &offsets,
-                                     const std::vector<std::array<unsigned int,5>> &targets)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets) {}
+                                     const std::vector<std::array<unsigned int,5>> &targets,
+                                     bool debug)
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets),
+      _debug(debug) {}
 
 void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
                                       uint64_t seed, bool sequential) {

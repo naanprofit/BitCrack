@@ -130,6 +130,7 @@ or `make cpu`. The feature is enabled with the following options:
 --wilds N              Steps for wild kangaroo walks (0 disables)
 --poll-batch N        Windows processed per poll (default 1024)
 --poll-interval MS    Polling interval in milliseconds (default 100)
+--debug               Log scalar, point coordinates, and hash for each attempt
 ```
 
 The union of all windows must cover 256 bits for a full reconstruction.

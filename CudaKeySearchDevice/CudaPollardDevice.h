@@ -10,11 +10,13 @@ class CudaPollardDevice : public PollardDevice {
     unsigned int _windowBits;
     std::vector<unsigned int> _offsets;
     std::vector<std::array<unsigned int,5>> _targets;
+    bool _debug;
 public:
     CudaPollardDevice(PollardEngine &engine,
                       unsigned int windowBits,
                       const std::vector<unsigned int> &offsets,
-                      const std::vector<std::array<unsigned int,5>> &targets);
+                      const std::vector<std::array<unsigned int,5>> &targets,
+                      bool debug);
 
     void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
                        uint64_t seed, bool sequential) override;

@@ -12,8 +12,10 @@ using namespace secp256k1;
 CLPollardDevice::CLPollardDevice(PollardEngine &engine,
                                  unsigned int windowBits,
                                  const std::vector<unsigned int> &offsets,
-                                 const std::vector<std::array<unsigned int,5>> &targets)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets) {}
+                                 const std::vector<std::array<unsigned int,5>> &targets,
+                                 bool debug)
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets),
+      _debug(debug) {}
 
 uint256 CLPollardDevice::maskBits(unsigned int bits) {
     uint256 m(0);

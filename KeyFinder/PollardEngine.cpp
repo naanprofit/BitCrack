@@ -8,11 +8,22 @@
 #include <limits>
 #include <chrono>
 #include <thread>
+#include <sstream>
+#include <iomanip>
 #include "../util/RingBuffer.h"
 #include "../util/util.h"
 #include "../Logger/Logger.h"
 
 using namespace secp256k1;
+
+static std::string hashToString(const unsigned int h[5]) {
+    std::ostringstream ss;
+    ss << std::hex << std::setfill('0');
+    for(int i=0;i<5;i++) {
+        ss << std::setw(8) << h[i];
+    }
+    return ss.str();
+}
 
 namespace {
 
@@ -228,10 +239,11 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              const uint256 &U,
                              unsigned int batchSize,
                              unsigned int pollInterval,
-                             bool sequential)
+                             bool sequential,
+                             bool debug)
     : _callback(cb), _windowBits(windowBits), _offsets(offsets),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
-      _sequential(sequential) {
+      _sequential(sequential), _debug(debug) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -303,6 +315,14 @@ void PollardEngine::processWindow(const PollardWindow &w) {
         return;
     }
 
+    if(_debug) {
+        Logger::log(LogLevel::Debug,
+                    "Window target=" + util::format(w.targetIdx) +
+                    " offset=" + util::format(w.offset) +
+                    " bits=" + util::format(w.bits) +
+                    " fragment=" + secp256k1::uint256(w.scalarFragment).toString(16));
+    }
+
     unsigned int modBits = w.offset + w.bits;
     if(modBits > 256) {
         return;
@@ -338,6 +358,14 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
     // non-matching candidates that may appear during the walk.
     unsigned int digest[5];
     Hash::hashPublicKeyCompressed(pub, digest);
+
+    if(_debug) {
+        Logger::log(LogLevel::Debug,
+                    "k=" + secp256k1::uint256(priv).toString(16) +
+                    " Px=" + secp256k1::uint256(pub.x).toString(16) +
+                    " Py=" + secp256k1::uint256(pub.y).toString(16) +
+                    " hash=" + hashToString(digest));
+    }
 
     bool match = false;
     for(const auto &t : _targets) {
