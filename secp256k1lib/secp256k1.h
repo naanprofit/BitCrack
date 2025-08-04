@@ -350,6 +350,9 @@ namespace secp256k1 {
         const uint256 BETA(_BETA_WORDS);
         const uint256 LAMBDA(_LAMBDA_WORDS);
 
+        inline const uint256& glvLambda() { return LAMBDA; }
+        inline const uint256& glvBeta() { return BETA; }
+
         ecpoint pointAtInfinity();
         ecpoint G();
         uint256 multiplyModP(const uint256 &a, const uint256&b);
@@ -364,7 +367,7 @@ namespace secp256k1 {
 
         inline ecpoint glvEndomorphismBasePoint()
         {
-            uint256 x = multiplyModP(G().x, BETA);
+            uint256 x = multiplyModP(G().x, glvBeta());
             return ecpoint(x, G().y);
         }
 

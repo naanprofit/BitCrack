@@ -138,26 +138,78 @@ __device__ static void scalarMultiplyPoint(const unsigned int bx[8], const unsig
     }
 }
 
+__device__ static inline bool isZero256(const unsigned int a[8])
+{
+    for(int i = 0; i < 8; ++i) {
+        if(a[i] != 0U) return false;
+    }
+    return true;
+}
+
+__device__ static void scalarMultiplySmall(const unsigned int bx[8], const unsigned int by[8],
+                                           const unsigned int k[8], unsigned int rx[8], unsigned int ry[8])
+{
+    setPointInfinity(rx, ry);
+    unsigned int qx[8];
+    unsigned int qy[8];
+    copyBigInt(bx, qx);
+    copyBigInt(by, qy);
+    for(int i = 0; i < 4; ++i) {
+        unsigned int word = k[i];
+        for(int bit = 0; bit < 32; ++bit) {
+            if(word & 1U) {
+                unsigned int tx[8];
+                unsigned int ty[8];
+                pointAdd(rx, ry, qx, qy, tx, ty);
+                copyBigInt(tx, rx);
+                copyBigInt(ty, ry);
+            }
+            word >>= 1U;
+            unsigned int tx[8];
+            unsigned int ty[8];
+            pointDouble(qx, qy, tx, ty);
+            copyBigInt(tx, qx);
+            copyBigInt(ty, qy);
+        }
+    }
+}
+
 __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[8], unsigned int ry[8])
 {
-    unsigned long long k1 = k;
-    unsigned long long k2 = 0ULL;
+    unsigned int scalar[8] = { (unsigned int)k, (unsigned int)(k >> 32), 0U, 0U, 0U, 0U, 0U, 0U };
+    GLVScalarSplit split;
+    splitScalar(scalar, split);
+
     unsigned int r1x[8];
     unsigned int r1y[8];
-    scalarMultiplyPoint(_GX, _GY, k1, r1x, r1y);
-    if(k2 != 0ULL) {
-        unsigned int base2x[8];
-        unsigned int base2y[8];
-        mulModP(_GX, _BETA, base2x);
-        copyBigInt(_GY, base2y);
-        unsigned int r2x[8];
-        unsigned int r2y[8];
-        scalarMultiplyPoint(base2x, base2y, k2, r2x, r2y);
-        pointAdd(r1x, r1y, r2x, r2y, rx, ry);
-    } else {
+    scalarMultiplySmall(_GX, _GY, split.k1, r1x, r1y);
+    if(split.k1Neg) {
+        unsigned int ny[8];
+        negModP(r1y, ny);
+        copyBigInt(ny, r1y);
+    }
+
+    if(isZero256(split.k2)) {
         copyBigInt(r1x, rx);
         copyBigInt(r1y, ry);
+        return;
     }
+
+    unsigned int base2x[8];
+    unsigned int base2y[8];
+    mulModP(_GX, _BETA, base2x);
+    copyBigInt(_GY, base2y);
+
+    unsigned int r2x[8];
+    unsigned int r2y[8];
+    scalarMultiplySmall(base2x, base2y, split.k2, r2x, r2y);
+    if(split.k2Neg) {
+        unsigned int ny[8];
+        negModP(r2y, ny);
+        copyBigInt(ny, r2y);
+    }
+
+    pointAdd(r1x, r1y, r2x, r2y, rx, ry);
 }
 
 __global__ void scalarOneKernel(unsigned int *outX, unsigned int *outY, unsigned int *outHash)
