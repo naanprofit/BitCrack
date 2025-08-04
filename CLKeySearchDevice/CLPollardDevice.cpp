@@ -25,24 +25,26 @@ uint256 CLPollardDevice::maskBits(unsigned int bits) {
     return m;
 }
 
-uint64_t CLPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
+uint256 CLPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
+    uint256 out(0);
     unsigned int word = offset / 32;
     unsigned int bit = offset % 32;
-    uint64_t val = 0;
-    if(word < 5) {
-        val = ((uint64_t)h[word]) >> bit;
-        if(bit + bits > 32 && word + 1 < 5) {
-            val |= ((uint64_t)h[word + 1]) << (32 - bit);
+    unsigned int words = (bits + 31) / 32;
+    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+        uint64_t val = ((uint64_t)h[word + i]) >> bit;
+        if(bit && word + i + 1 < 5) {
+            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
         }
+        out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
-    if(bit + bits > 64 && word + 2 < 5) {
-        val |= ((uint64_t)h[word + 2]) << (64 - bit);
+    if(bits % 32) {
+        unsigned int mask = (1u << (bits % 32)) - 1u;
+        out.v[words - 1] &= mask;
     }
-    if(bits < 64) {
-        uint64_t mask = (bits == 64) ? 0xffffffffffffffffULL : ((1ULL << bits) - 1ULL);
-        val &= mask;
+    for(unsigned int i = words; i < 8; ++i) {
+        out.v[i] = 0u;
     }
-    return val;
+    return out;
 }
 
 namespace {
@@ -50,7 +52,7 @@ struct TargetWindowCL {
     cl_uint targetIdx;
     cl_uint offset;
     cl_uint bits;
-    cl_ulong target;
+    cl_uint target[5];
 };
 
 struct PollardWindowCL {
@@ -124,7 +126,8 @@ void runWalk(PollardEngine &engine,
             tw.targetIdx = static_cast<cl_uint>(t);
             tw.offset = off;
             tw.bits = windowBits;
-            tw.target = CLPollardDevice::hashWindowLE(targets[t].data(), off, windowBits);
+            uint256 hv = CLPollardDevice::hashWindowLE(targets[t].data(), off, windowBits);
+            hv.exportWords(tw.target, 5);
             windowList.push_back(tw);
         }
     }

@@ -16,27 +16,29 @@ struct GpuTargetWindow {
     unsigned int targetIdx;
     unsigned int offset;
     unsigned int bits;
-    unsigned long long target;
+    unsigned int target[5];
 };
 
-static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
+static uint256 hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits) {
+    uint256 out(0);
     unsigned int word = offset / 32;
     unsigned int bit = offset % 32;
-    uint64_t val = 0;
-    if(word < 5) {
-        val = ((uint64_t)h[word]) >> bit;
-        if(bit + bits > 32 && word + 1 < 5) {
-            val |= ((uint64_t)h[word + 1]) << (32 - bit);
+    unsigned int words = (bits + 31) / 32;
+    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+        uint64_t val = ((uint64_t)h[word + i]) >> bit;
+        if(bit && word + i + 1 < 5) {
+            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
         }
+        out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
-    if(bit + bits > 64 && word + 2 < 5) {
-        val |= ((uint64_t)h[word + 2]) << (64 - bit);
+    if(bits % 32) {
+        unsigned int mask = (1u << (bits % 32)) - 1u;
+        out.v[words - 1] &= mask;
     }
-    if(bits < 64) {
-        uint64_t mask = (bits == 64) ? 0xffffffffffffffffULL : ((1ULL << bits) - 1ULL);
-        val &= mask;
+    for(unsigned int i = words; i < 8; ++i) {
+        out.v[i] = 0u;
     }
-    return val;
+    return out;
 }
 
 // Each thread runs an independent walk using a unique seed and starting
@@ -103,7 +105,8 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             tw.targetIdx = static_cast<unsigned int>(t);
             tw.offset = off;
             tw.bits = _windowBits;
-            tw.target = hashWindowLE(_targets[t].data(), off, _windowBits);
+            uint256 hv = hashWindowLE(_targets[t].data(), off, _windowBits);
+            hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
     }
@@ -226,7 +229,8 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             tw.targetIdx = static_cast<unsigned int>(t);
             tw.offset = off;
             tw.bits = _windowBits;
-            tw.target = hashWindowLE(_targets[t].data(), off, _windowBits);
+            uint256 hv = hashWindowLE(_targets[t].data(), off, _windowBits);
+            hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
     }
