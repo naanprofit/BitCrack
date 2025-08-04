@@ -539,7 +539,7 @@ int runPollard()
     for(size_t t = 0; t < targetHashes.size(); ++t) {
         for(unsigned int off : offsets) {
             unsigned int bits = off + window;
-            secp256k1::uint256 rem = PollardEngine::hashWindow(targetHashes[t].data(), off, window);
+            secp256k1::uint256 rem = PollardEngine::publicHashWindow(targetHashes[t].data(), off, window);
             std::string modStr;
             if(bits >= 256) {
                 modStr = "2^256";
