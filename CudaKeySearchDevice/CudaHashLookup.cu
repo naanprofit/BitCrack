@@ -24,24 +24,19 @@ __constant__ unsigned long long _BLOOM_FILTER_MASK64[1];
 __constant__ unsigned int _USE_BLOOM_FILTER[1];
 
 
-static unsigned int swp(unsigned int x)
-{
-	return (x << 24) | ((x << 8) & 0x00ff0000) | ((x >> 8) & 0x0000ff00) | (x >> 24);
-}
-
 static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
-	unsigned int iv[5] = {
-		0x67452301,
-		0xefcdab89,
-		0x98badcfe,
-		0x10325476,
-		0xc3d2e1f0
-	};
+        unsigned int iv[5] = {
+                0x67452301,
+                0xefcdab89,
+                0x98badcfe,
+                0x10325476,
+                0xc3d2e1f0
+        };
 
-	for(int i = 0; i < 5; i++) {
-		hOut[i] = swp(hIn[i]) - iv[(i + 1) % 5];
-	}
+        for(int i = 0; i < 5; i++) {
+                hOut[i] = hIn[i] - iv[(i + 1) % 5];
+        }
 }
 
 /**

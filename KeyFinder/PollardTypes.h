@@ -2,6 +2,10 @@
 #define POLLARD_TYPES_H
 #include "secp256k1.h"
 
+// Hashes within the Pollard engine are stored in little-endian word order so
+// that bit offset 0 corresponds to the least significant bit of the RIPEMD160
+// digest.
+
 // Result produced by CPU fallback implementations where the entire
 // hash160 is returned for host-side window matching.  This remains for
 // backwards compatibility with the original PollardEngine walk code.
@@ -18,7 +22,8 @@ struct PollardMatch {
 // scalar.
 struct PollardWindow {
     unsigned int targetIdx;                  // index of the matching target
-    unsigned int offset;                     // bit offset within the hash160
+    unsigned int offset;                     // bit offset within the
+                                             // little-endian hash160
     unsigned int bits;                       // size of the window in bits
     secp256k1::uint256 scalarFragment;       // low ``offset+bits`` bits of k
 };

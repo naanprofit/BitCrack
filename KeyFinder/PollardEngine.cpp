@@ -59,7 +59,11 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             if(checkPoint(p)) {
                 PollardMatch m;
                 m.scalar = k;
-                Hash::hashPublicKeyCompressed(p, m.hash);
+                unsigned int be[5];
+                Hash::hashPublicKeyCompressed(p, be);
+                for(int j = 0; j < 5; ++j) {
+                    m.hash[j] = util::endian(be[4 - j]);
+                }
                 _buffer.push(m);
             }
             k = k.add(1);
@@ -79,7 +83,11 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
         if(checkPoint(p)) {
             PollardMatch m;
             m.scalar = k;
-            Hash::hashPublicKeyCompressed(p, m.hash);
+            unsigned int be[5];
+            Hash::hashPublicKeyCompressed(p, be);
+            for(int j = 0; j < 5; ++j) {
+                m.hash[j] = util::endian(be[4 - j]);
+            }
             _buffer.push(m);
         }
     }
@@ -97,7 +105,11 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             if(checkPoint(p)) {
                 PollardMatch m;
                 m.scalar = k;
-                Hash::hashPublicKeyCompressed(p, m.hash);
+                unsigned int be[5];
+                Hash::hashPublicKeyCompressed(p, be);
+                for(int j = 0; j < 5; ++j) {
+                    m.hash[j] = util::endian(be[4 - j]);
+                }
                 _buffer.push(m);
             }
             if(k.isZero()) {
@@ -122,7 +134,11 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         if(checkPoint(p)) {
             PollardMatch m;
             m.scalar = kOffset;
-            Hash::hashPublicKeyCompressed(p, m.hash);
+            unsigned int be[5];
+            Hash::hashPublicKeyCompressed(p, be);
+            for(int j = 0; j < 5; ++j) {
+                m.hash[j] = util::endian(be[4 - j]);
+            }
             _buffer.push(m);
         }
     }
@@ -363,15 +379,19 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
     // Compute the candidate's hash160 and ensure it matches one of the
     // supplied targets before invoking the callback.  This avoids reporting
     // non-matching candidates that may appear during the walk.
+    unsigned int be[5];
+    Hash::hashPublicKeyCompressed(pub, be);
     unsigned int digest[5];
-    Hash::hashPublicKeyCompressed(pub, digest);
+    for(int i = 0; i < 5; ++i) {
+        digest[i] = util::endian(be[4 - i]);
+    }
 
     if(_debug) {
         Logger::log(LogLevel::Debug,
                     "k=" + secp256k1::uint256(priv).toString(16) +
                     " Px=" + secp256k1::uint256(pub.x).toString(16) +
                     " Py=" + secp256k1::uint256(pub.y).toString(16) +
-                    " hash=" + hashToString(digest));
+                    " hash=" + hashToString(be));
     }
 
     bool match = false;
