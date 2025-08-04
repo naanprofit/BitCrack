@@ -189,10 +189,12 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int windowBits,
                              const std::vector<unsigned int> &offsets,
                              const std::vector<std::array<unsigned int,5>> &targets,
+                             const uint256 &L,
+                             const uint256 &U,
                              unsigned int batchSize,
                              unsigned int pollInterval)
     : _callback(cb), _windowBits(windowBits), _offsets(offsets),
-      _batchSize(batchSize), _pollInterval(pollInterval) {
+      _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -214,7 +216,7 @@ void PollardEngine::addConstraint(size_t target, unsigned int bits,
     _targets[target].constraints.push_back(c);
 }
 
-bool PollardEngine::reconstruct(size_t target, uint256 &out) {
+bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
     if(target >= _targets.size()) {
         return false;
     }
@@ -238,8 +240,16 @@ bool PollardEngine::reconstruct(size_t target, uint256 &out) {
         acc = combined;
     }
 
-    out = acc.value;
-    return acc.bits >= 256;
+    k0 = acc.value;
+    // modulus = 2^bits
+    if(acc.bits >= 256) {
+        modulus = uint256(0); // represents 2^256
+    } else {
+        modulus = uint256(0);
+        modulus.v[acc.bits / 32] = (1u << (acc.bits % 32));
+    }
+
+    return true;
 }
 
 bool PollardEngine::checkPoint(const ecpoint &p) {
@@ -265,30 +275,10 @@ void PollardEngine::processWindow(const PollardWindow &w) {
     _targets[w.targetIdx].seenOffsets.insert(w.offset);
 
     _reconstructionAttempts++;
-    uint256 priv;
-    if(reconstruct(w.targetIdx, priv)) {
-        ecpoint pub = multiplyPoint(priv, G());
-        unsigned int h[5];
-        Hash::hashPublicKeyCompressed(pub, h);
-        bool match = true;
-        for(int i = 0; i < 5; ++i) {
-            if(h[i] != _targets[w.targetIdx].hash[i]) {
-                match = false;
-                break;
-            }
-        }
-        if(match) {
-            _reconstructionSuccess++;
-            if(_callback) {
-                KeySearchResult r;
-                r.privateKey = priv;
-                r.publicKey = pub;
-                r.compressed = true;
-                std::memcpy(r.hash, h, sizeof(h));
-                r.address = Address::fromPublicKey(pub, true);
-                _callback(r);
-            }
-        }
+    uint256 k0;
+    uint256 modulus;
+    if(reconstruct(w.targetIdx, k0, modulus)) {
+        enumerateCandidates(k0, modulus, _L, _U);
     }
 
     if((_windowsProcessed % 1000) == 0) {
@@ -331,6 +321,12 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
         return; // Candidate does not belong to the target set
     }
 
+    _reconstructionSuccess++;
+
+    if(!_callback) {
+        return;
+    }
+
     KeySearchResult r;
     r.privateKey = priv;
     r.publicKey = pub;
@@ -339,6 +335,36 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
     r.address = Address::fromPublicKey(pub, true);
 
     _callback(r);
+}
+
+void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulus,
+                                       const uint256 &L, const uint256 &U) {
+    // Handle full reconstruction separately (modulus == 0 represents 2^256)
+    if(modulus.isZero()) {
+        if(k0.cmp(L) >= 0 && k0.cmp(U) <= 0) {
+            ecpoint pub = multiplyPoint(k0, G());
+            enumerateCandidate(k0, pub);
+        }
+        return;
+    }
+
+    uint256 k = k0;
+    // Move k into the search range [L, U]
+    if(k.cmp(L) < 0) {
+        while(k.cmp(L) < 0) {
+            uint256 next = k.add(modulus);
+            if(next.cmp(k) <= 0) {
+                // overflow, no candidates
+                return;
+            }
+            k = next;
+        }
+    }
+
+    for(; k.cmp(U) <= 0; k = k.add(modulus)) {
+        ecpoint pub = multiplyPoint(k, G());
+        enumerateCandidate(k, pub);
+    }
 }
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {

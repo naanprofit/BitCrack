@@ -526,6 +526,7 @@ int runPollard()
     try {
         while(segmentStart.cmp(_config.endKey) <= 0) {
             PollardEngine engine(resultCallback, window, offsets, targetHashes,
+                                 segmentStart, _config.endKey,
                                  _config.pollBatch, _config.pollInterval);
 
 #ifdef BUILD_CUDA

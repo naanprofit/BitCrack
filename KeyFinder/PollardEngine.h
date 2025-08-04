@@ -47,6 +47,8 @@ public:
                   unsigned int windowBits,
                   const std::vector<unsigned int> &offsets,
                   const std::vector<std::array<unsigned int,5>> &targets,
+                  const secp256k1::uint256 &L,
+                  const secp256k1::uint256 &U,
                   unsigned int batchSize = 1024,
                   unsigned int pollInterval = 100);
 
@@ -57,7 +59,8 @@ public:
     // Attempt to reconstruct the private key for ``target`` from accumulated
     // constraints using a CRT solver capable of combining arbitrarily large
     // power-of-two moduli.
-    bool reconstruct(size_t target, secp256k1::uint256 &out);
+    bool reconstruct(size_t target, secp256k1::uint256 &k0,
+                     secp256k1::uint256 &modulus);
 
     // Consume a window result produced by a GPU kernel or converted from a
     // CPU device.  This function accumulates the constraint, attempts key
@@ -94,6 +97,8 @@ private:
 
     unsigned int _batchSize;                  // windows processed per poll
     unsigned int _pollInterval;               // milliseconds between polls
+    secp256k1::uint256 _L;                    // search lower bound
+    secp256k1::uint256 _U;                    // search upper bound
 
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
@@ -104,6 +109,10 @@ private:
     bool checkPoint(const secp256k1::ecpoint &p);
     void enumerateCandidate(const secp256k1::uint256 &priv,
                             const secp256k1::ecpoint &pub);
+    void enumerateCandidates(const secp256k1::uint256 &k0,
+                             const secp256k1::uint256 &modulus,
+                             const secp256k1::uint256 &L,
+                             const secp256k1::uint256 &U);
     void handleMatch(const PollardMatch &m);
     void pollDevice();
 
