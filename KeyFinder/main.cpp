@@ -631,7 +631,7 @@ bool parseShare(const std::string &s, uint32_t &idx, uint32_t &total)
     return true;
 }
 
-bool parseHash160(const std::string &s, unsigned int hash[5])
+bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
 {
     if(s.length() != 40) {
         return false;
@@ -645,7 +645,7 @@ bool parseHash160(const std::string &s, unsigned int hash[5])
 
     for(int i = 0; i < 5; i++) {
         std::string word = s.substr((4 - i) * 8, 8);
-        unsigned int w;
+        unsigned int w = 0;
         std::stringstream ss;
         ss << std::hex << word;
         ss >> w;
@@ -820,13 +820,9 @@ int main(int argc, char **argv)
                 }
                 optShares = true;
             } else if(optArg.equals("", "--hash160")) {
-                unsigned int h[5];
-                if(!parseHash160(optArg.arg, h)) {
-                    throw std::string("invalid argument: expected 40 hex characters");
-                }
                 std::array<unsigned int,5> arr;
-                for(int j=0; j<5; j++) {
-                    arr[j] = h[j];
+                if(!parseHash160(optArg.arg, arr)) {
+                    throw std::string("invalid argument: expected 40 hex characters");
                 }
                 _config.hash160Targets.push_back(arr);
             } else if(optArg.equals("", "--stride")) {
