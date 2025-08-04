@@ -113,7 +113,6 @@ __kernel void pollard_random_walk(__global PollardWindow *out,
 
     uint px[8];
     uint py[8];
-
     if(startX && startY) {
         for(int i = 0; i < 8; i++) {
             px[i] = startX[gid * 8 + i];
