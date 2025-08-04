@@ -10,6 +10,7 @@
 
 
 using namespace secp256k1;
+using cl::clCall;
 
 CLPollardDevice::CLPollardDevice(PollardEngine &engine,
                                  unsigned int windowBits,
