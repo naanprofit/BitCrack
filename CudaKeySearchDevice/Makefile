@@ -8,6 +8,8 @@ MATHSRC:=$(CUDA_MATH)/sha256_constants.cu $(CUDA_MATH)/ripemd160_constants.cu
 all:    cuda
 
 cuda:
+;rm -f *.o
+;rm -f ${CUDA_MATH}/sha256_constants.cu.o ${CUDA_MATH}/ripemd160_constants.cu.o cuda_libs.o
 ;for file in ${CPPSRC} ; do\
 ;   ${NVCC} -x cu -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE};\
 ;done
@@ -22,11 +24,13 @@ cuda:
 ;   ${NVCC} -c $$file -o ${CUDA_MATH}/$${file_name%.cu}.cu.o ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
-;${NVCC} -dlink ${NVCCFLAGS} -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
+;${NVCC} ${NVCCFLAGS} -dlink -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
 
 ;ar rvs ${LIBDIR}/lib$(NAME).a *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o
 
 clean:
 ;rm -f *.o
 ;rm -f *.a
+;rm -f cuda_libs.o
+;rm -f ${CUDA_MATH}/sha256_constants.cu.o ${CUDA_MATH}/ripemd160_constants.cu.o
 
