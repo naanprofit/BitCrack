@@ -72,20 +72,26 @@ __device__ static inline bool ge256(const unsigned int a[8], const unsigned int 
 }
 
 __device__ static inline void sub256(const unsigned int a[8], const unsigned int b[8], unsigned int r[8]) {
-    unsigned long long borrow = 0ULL;
+    unsigned int borrow = 0U;
     for(int i = 0; i < 8; ++i) {
-        unsigned long long diff = (unsigned long long)a[i] - b[i] - borrow;
-        r[i] = (unsigned int)diff;
-        borrow = (diff >> 63) & 1ULL;
+        unsigned int ai = a[i];
+        unsigned int bi = b[i];
+        unsigned int t = ai - bi;
+        unsigned int ri = t - borrow;
+        borrow = (ai < bi) | (t < borrow);
+        r[i] = ri;
     }
 }
 
 __device__ static inline void addModN(const unsigned int a[8], const unsigned int b[8], unsigned int r[8]) {
-    unsigned long long carry = 0ULL;
+    unsigned int carry = 0U;
     for(int i = 0; i < 8; ++i) {
-        unsigned long long sum = (unsigned long long)a[i] + b[i] + carry;
-        r[i] = (unsigned int)sum;
-        carry = sum >> 32;
+        unsigned int ai = a[i];
+        unsigned int bi = b[i];
+        unsigned int s = ai + bi;
+        unsigned int ri = s + carry;
+        carry = (s < ai) | (ri < s);
+        r[i] = ri;
     }
     if(carry || ge256(r, ORDER)) {
         sub256(r, ORDER, r);
