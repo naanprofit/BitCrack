@@ -72,6 +72,7 @@ typedef struct {
     uint32_t pollBatch = 1024;
     uint32_t pollInterval = 100;
     bool full = false;
+    bool deterministic = false;
 }RunConfig;
 
 static RunConfig _config;
@@ -246,6 +247,7 @@ void usage()
     printf("--poll-batch N        Windows processed per poll (default 1024)\n");
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
     printf("--full                 Process entire keyspace\n");
+    printf("--deterministic       Use sequential deterministic walks\n");
 }
 
 
@@ -527,7 +529,8 @@ int runPollard()
         while(segmentStart.cmp(_config.endKey) <= 0) {
             PollardEngine engine(resultCallback, window, offsets, targetHashes,
                                  segmentStart, _config.endKey,
-                                 _config.pollBatch, _config.pollInterval);
+                                 _config.pollBatch, _config.pollInterval,
+                                 _config.deterministic);
 
 #ifdef BUILD_CUDA
             if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
@@ -545,8 +548,7 @@ int runPollard()
             }
 
             if(wildSteps > 0) {
-                secp256k1::ecpoint startPoint = secp256k1::multiplyPoint(segmentStart, secp256k1::G());
-                engine.runWildWalk(startPoint, wildSteps);
+                engine.runWildWalk(segmentStart, wildSteps);
             }
 
             if(_resultFound) {
@@ -681,6 +683,7 @@ int main(int argc, char **argv)
     parser.add("", "--poll-batch", true);
     parser.add("", "--poll-interval", true);
     parser.add("", "--full", false);
+    parser.add("", "--deterministic", false);
 
     try {
         parser.parse(argc, argv);
@@ -813,6 +816,8 @@ int main(int argc, char **argv)
                 }
             } else if(optArg.equals("", "--full")) {
                 _config.full = true;
+            } else if(optArg.equals("", "--deterministic")) {
+                _config.deterministic = true;
             }
 
 		} catch(std::string err) {

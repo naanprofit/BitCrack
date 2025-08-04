@@ -95,19 +95,19 @@ ulong hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits
     return val;
 }
 
-__kernel void pollard_random_walk(__global PollardWindow *out,
-                                  __global uint *outCount,
-                                  uint maxOut,
-                                  __global ulong *seeds,
-                                  __global ulong *starts,
-                                  __global uint *startX,
-                                  __global uint *startY,
-                                  uint steps,
-                                  __global const TargetWindow *windows,
-                                  uint windowCount)
+__kernel void pollard_walk(__global PollardWindow *out,
+                           __global uint *outCount,
+                           uint maxOut,
+                           __global ulong *seeds,
+                           __global ulong *starts,
+                           __global uint *startX,
+                           __global uint *startY,
+                           uint steps,
+                           __global const TargetWindow *windows,
+                           uint windowCount,
+                           ulong stride)
 {
     size_t gid = get_global_id(0);
-    RNGState rng = { seeds[gid] ^ (ulong)1, seeds[gid] + (ulong)1 };
     ulong scalar = starts[gid];
     const ulong ORDER = (ulong)0xBFD25E8CD0364141UL;
 
@@ -122,44 +122,86 @@ __kernel void pollard_random_walk(__global PollardWindow *out,
         scalarMultiplyBase(scalar, px, py);
     }
 
-    for(uint i = 0; i < steps; i++) {
-        ulong step = next_random_step(&rng);
-        scalar += step;
-        scalar %= ORDER;
+    if(stride == 0UL) {
+        RNGState rng = { seeds[gid] ^ (ulong)1, seeds[gid] + (ulong)1 };
+        for(uint i = 0; i < steps; i++) {
+            ulong step = next_random_step(&rng);
+            scalar += step;
+            scalar %= ORDER;
 
-        uint sx[8];
-        uint sy[8];
-        scalarMultiplyBase(step, sx, sy);
-        uint tx[8];
-        uint ty[8];
-        pointAdd(px, py, sx, sy, tx, ty);
-        copyBigInt(tx, px);
-        copyBigInt(ty, py);
+            uint sx[8];
+            uint sy[8];
+            scalarMultiplyBase(step, sx, sy);
+            uint tx[8];
+            uint ty[8];
+            pointAdd(px, py, sx, sy, tx, ty);
+            copyBigInt(tx, px);
+            copyBigInt(ty, py);
 
-        uint digest[5];
-        uint finalHash[5];
-        hashPublicKeyCompressed(px, py[7], digest);
-        doRMD160FinalRound(digest, finalHash);
+            uint digest[5];
+            uint finalHash[5];
+            hashPublicKeyCompressed(px, py[7], digest);
+            doRMD160FinalRound(digest, finalHash);
 
-        for(uint w = 0; w < windowCount; w++) {
-            TargetWindow tw = windows[w];
-            ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
-            if(hv == tw.target) {
-                uint slot = atomic_inc(outCount);
-                if(slot < maxOut) {
-                    out[slot].targetIdx = tw.targetIdx;
-                    out[slot].offset    = tw.offset;
-                    out[slot].bits      = tw.bits;
-                    uint modBits = tw.offset + tw.bits;
-                    ulong mask = (modBits >= 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << modBits) - 1UL);
-                    ulong frag = scalar & mask;
-                    out[slot].k[0] = (uint)(frag & 0xffffffffUL);
-                    out[slot].k[1] = (uint)(frag >> 32);
-                    for(int j = 2; j < 8; j++) {
-                        out[slot].k[j] = 0U;
+            for(uint w = 0; w < windowCount; w++) {
+                TargetWindow tw = windows[w];
+                ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
+                if(hv == tw.target) {
+                    uint slot = atomic_inc(outCount);
+                    if(slot < maxOut) {
+                        out[slot].targetIdx = tw.targetIdx;
+                        out[slot].offset    = tw.offset;
+                        out[slot].bits      = tw.bits;
+                        uint modBits = tw.offset + tw.bits;
+                        ulong mask = (modBits >= 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << modBits) - 1UL);
+                        ulong frag = scalar & mask;
+                        out[slot].k[0] = (uint)(frag & 0xffffffffUL);
+                        out[slot].k[1] = (uint)(frag >> 32);
+                        for(int j = 2; j < 8; j++) {
+                            out[slot].k[j] = 0U;
+                        }
                     }
                 }
             }
+        }
+    } else {
+        uint sx[8];
+        uint sy[8];
+        scalarMultiplyBase(stride, sx, sy);
+        for(uint i = 0; i < steps; i++) {
+            uint digest[5];
+            uint finalHash[5];
+            hashPublicKeyCompressed(px, py[7], digest);
+            doRMD160FinalRound(digest, finalHash);
+
+            for(uint w = 0; w < windowCount; w++) {
+                TargetWindow tw = windows[w];
+                ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
+                if(hv == tw.target) {
+                    uint slot = atomic_inc(outCount);
+                    if(slot < maxOut) {
+                        out[slot].targetIdx = tw.targetIdx;
+                        out[slot].offset    = tw.offset;
+                        out[slot].bits      = tw.bits;
+                        uint modBits = tw.offset + tw.bits;
+                        ulong mask = (modBits >= 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << modBits) - 1UL);
+                        ulong frag = scalar & mask;
+                        out[slot].k[0] = (uint)(frag & 0xffffffffUL);
+                        out[slot].k[1] = (uint)(frag >> 32);
+                        for(int j = 2; j < 8; j++) {
+                            out[slot].k[j] = 0U;
+                        }
+                    }
+                }
+            }
+
+            scalar += stride;
+            scalar %= ORDER;
+            uint tx[8];
+            uint ty[8];
+            pointAdd(px, py, sx, sy, tx, ty);
+            copyBigInt(tx, px);
+            copyBigInt(ty, py);
         }
     }
 }

@@ -197,19 +197,19 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
     }
 }
 
-extern "C" __global__ void pollardRandomWalk(GpuPollardWindow *out,
-                                              unsigned int *outCount,
-                                              unsigned int maxOut,
-                                              const unsigned long long *seeds,
-                                              const unsigned long long *starts,
-                                              const unsigned int *startX,
-                                              const unsigned int *startY,
-                                              unsigned int steps,
-                                              const TargetWindow *windows,
-                                              unsigned int windowCount)
+extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
+                                       unsigned int *outCount,
+                                       unsigned int maxOut,
+                                       const unsigned long long *seeds,
+                                       const unsigned long long *starts,
+                                       const unsigned int *startX,
+                                       const unsigned int *startY,
+                                       unsigned int steps,
+                                       const TargetWindow *windows,
+                                       unsigned int windowCount,
+                                       unsigned long long stride)
 {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
     unsigned long long scalar = starts[tid];
     const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
     unsigned int px[8];
@@ -224,46 +224,86 @@ extern "C" __global__ void pollardRandomWalk(GpuPollardWindow *out,
         scalarMultiplyBase(scalar, px, py);
     }
 
-    for(unsigned int i = 0; i < steps; ++i) {
-        unsigned long long step = next_random_step(rng);
-        scalar += step;
-        scalar %= ORDER;
+    if(stride == 0ULL) {
+        RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
+        for(unsigned int i = 0; i < steps; ++i) {
+            unsigned long long step = next_random_step(rng);
+            scalar += step;
+            scalar %= ORDER;
 
-        unsigned int sx[8];
-        unsigned int sy[8];
-        scalarMultiplyBase(step, sx, sy);
-        unsigned int tx[8];
-        unsigned int ty[8];
-        pointAdd(px, py, sx, sy, tx, ty);
-        copyBigInt(tx, px);
-        copyBigInt(ty, py);
+            unsigned int sx[8];
+            unsigned int sy[8];
+            scalarMultiplyBase(step, sx, sy);
+            unsigned int tx[8];
+            unsigned int ty[8];
+            pointAdd(px, py, sx, sy, tx, ty);
+            copyBigInt(tx, px);
+            copyBigInt(ty, py);
 
-        // Hash the current point once per step
-        unsigned int digest[5];
-        unsigned int finalHash[5];
-        hashPublicKeyCompressed(px, py[7], digest);
-        doRMD160FinalRound(digest, finalHash);
+            unsigned int digest[5];
+            unsigned int finalHash[5];
+            hashPublicKeyCompressed(px, py[7], digest);
+            doRMD160FinalRound(digest, finalHash);
 
-        // Compare against all requested windows
-        for(unsigned int w = 0; w < windowCount; ++w) {
-            TargetWindow tw = windows[w];
-            unsigned long long hv = hashWindow(finalHash, tw.offset, tw.bits);
-            if(hv == tw.target) {
-                unsigned int idx = atomicAdd(outCount, 1u);
-                if(idx < maxOut) {
-                    out[idx].targetIdx = tw.targetIdx;
-                    out[idx].offset    = tw.offset;
-                    out[idx].bits      = tw.bits;
-                    unsigned int modBits = tw.offset + tw.bits;
-                    unsigned long long mask = (modBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << modBits) - 1ULL);
-                    unsigned long long frag = scalar & mask;
-                    out[idx].k[0] = (unsigned int)(frag & 0xffffffffULL);
-                    out[idx].k[1] = (unsigned int)(frag >> 32);
-                    for(int j = 2; j < 8; ++j) {
-                        out[idx].k[j] = 0U;
+            for(unsigned int w = 0; w < windowCount; ++w) {
+                TargetWindow tw = windows[w];
+                unsigned long long hv = hashWindow(finalHash, tw.offset, tw.bits);
+                if(hv == tw.target) {
+                    unsigned int idx = atomicAdd(outCount, 1u);
+                    if(idx < maxOut) {
+                        out[idx].targetIdx = tw.targetIdx;
+                        out[idx].offset    = tw.offset;
+                        out[idx].bits      = tw.bits;
+                        unsigned int modBits = tw.offset + tw.bits;
+                        unsigned long long mask = (modBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << modBits) - 1ULL);
+                        unsigned long long frag = scalar & mask;
+                        out[idx].k[0] = (unsigned int)(frag & 0xffffffffULL);
+                        out[idx].k[1] = (unsigned int)(frag >> 32);
+                        for(int j = 2; j < 8; ++j) {
+                            out[idx].k[j] = 0U;
+                        }
                     }
                 }
             }
+        }
+    } else {
+        unsigned int sx[8];
+        unsigned int sy[8];
+        scalarMultiplyBase(stride, sx, sy);
+        for(unsigned int i = 0; i < steps; ++i) {
+            unsigned int digest[5];
+            unsigned int finalHash[5];
+            hashPublicKeyCompressed(px, py[7], digest);
+            doRMD160FinalRound(digest, finalHash);
+
+            for(unsigned int w = 0; w < windowCount; ++w) {
+                TargetWindow tw = windows[w];
+                unsigned long long hv = hashWindow(finalHash, tw.offset, tw.bits);
+                if(hv == tw.target) {
+                    unsigned int idx = atomicAdd(outCount, 1u);
+                    if(idx < maxOut) {
+                        out[idx].targetIdx = tw.targetIdx;
+                        out[idx].offset    = tw.offset;
+                        out[idx].bits      = tw.bits;
+                        unsigned int modBits = tw.offset + tw.bits;
+                        unsigned long long mask = (modBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << modBits) - 1ULL);
+                        unsigned long long frag = scalar & mask;
+                        out[idx].k[0] = (unsigned int)(frag & 0xffffffffULL);
+                        out[idx].k[1] = (unsigned int)(frag >> 32);
+                        for(int j = 2; j < 8; ++j) {
+                            out[idx].k[j] = 0U;
+                        }
+                    }
+                }
+            }
+
+            scalar += stride;
+            scalar %= ORDER;
+            unsigned int tx[8];
+            unsigned int ty[8];
+            pointAdd(px, py, sx, sy, tx, ty);
+            copyBigInt(tx, px);
+            copyBigInt(ty, py);
         }
     }
 }

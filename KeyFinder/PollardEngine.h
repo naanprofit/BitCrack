@@ -15,8 +15,10 @@
 class PollardDevice {
 public:
     virtual ~PollardDevice() {}
-    virtual void startTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed) = 0;
-    virtual void startWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed) = 0;
+    virtual void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
+                               uint64_t seed, bool sequential) = 0;
+    virtual void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
+                               uint64_t seed, bool sequential) = 0;
     // CPU implementations may still emit ``PollardMatch`` results which are
     // converted to ``PollardWindow`` objects by the engine.  GPU
     // implementations can enqueue ``PollardWindow`` structures directly.
@@ -50,7 +52,8 @@ public:
                   const secp256k1::uint256 &L,
                   const secp256k1::uint256 &U,
                   unsigned int batchSize = 1024,
-                  unsigned int pollInterval = 100);
+                  unsigned int pollInterval = 100,
+                  bool sequential = false);
 
     // Add a constraint of the form k \equiv value (mod 2^bits) for ``target``
     void addConstraint(size_t target, unsigned int bits,
@@ -73,8 +76,8 @@ public:
     // testing and for GPU implementations that require an explicit seed.
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps);
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
-    void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps);
-    void runWildWalk(const secp256k1::ecpoint &start, uint64_t steps, uint64_t seed);
+    void runWildWalk(const secp256k1::uint256 &start, uint64_t steps);
+    void runWildWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
 
     // Replace the underlying device used to generate walk results.  By
     // default a CPU implementation is used which enables unit tests to run
@@ -99,6 +102,7 @@ private:
     unsigned int _pollInterval;               // milliseconds between polls
     secp256k1::uint256 _L;                    // search lower bound
     secp256k1::uint256 _U;                    // search upper bound
+    bool _sequential;                         // sequential walk mode
 
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed

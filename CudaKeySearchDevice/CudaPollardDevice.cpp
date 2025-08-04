@@ -40,17 +40,20 @@ static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsig
 }
 
 // Each thread runs an independent walk using a unique seed and starting
-// scalar.  Optional starting points can be supplied for wild walks.
-extern "C" __global__ void pollardRandomWalk(GpuPollardWindow *out,
-                                             unsigned int *outCount,
-                                             unsigned int maxOut,
-                                             const unsigned long long *seeds,
-                                             const unsigned long long *starts,
-                                             const unsigned int *startX,
-                                             const unsigned int *startY,
-                                             unsigned int steps,
-                                             const GpuTargetWindow *windows,
-                                             unsigned int windowCount);
+// scalar.  Optional starting points can be supplied for wild walks.  When
+// ``stride`` is non-zero, a deterministic sequential walk is performed where
+// each thread increments by ``stride`` instead of a random step.
+extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
+                                       unsigned int *outCount,
+                                       unsigned int maxOut,
+                                       const unsigned long long *seeds,
+                                       const unsigned long long *starts,
+                                       const unsigned int *startX,
+                                       const unsigned int *startY,
+                                       unsigned int steps,
+                                       const GpuTargetWindow *windows,
+                                       unsigned int windowCount,
+                                       unsigned long long stride);
 
 CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      unsigned int windowBits,
@@ -58,7 +61,8 @@ CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      const std::vector<std::array<unsigned int,5>> &targets)
     : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets) {}
 
-void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
+void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
+                                      uint64_t seed, bool sequential) {
     // Determine launch configuration based on device capabilities
     cudaDeviceProp prop;
     int dev = 0;
@@ -116,11 +120,13 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
-    pollardRandomWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
-                                                             d_seeds, d_starts,
-                                                             nullptr, nullptr,
-                                                             static_cast<unsigned int>(steps),
-                                                             d_windows, windowCount);
+    unsigned long long stride = sequential ? static_cast<unsigned long long>(totalThreads) : 0ULL;
+    pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
+                                                       d_seeds, d_starts,
+                                                       nullptr, nullptr,
+                                                       static_cast<unsigned int>(steps),
+                                                       d_windows, windowCount,
+                                                       stride);
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     unsigned int h_count = 0;
@@ -148,7 +154,8 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint
     cudaStreamDestroy(stream);
 }
 
-void CudaPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
+void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
+                                      uint64_t seed, bool sequential) {
     // Determine launch configuration similar to tame walk
     cudaDeviceProp prop;
     int dev = 0;
@@ -162,14 +169,27 @@ void CudaPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint
     unsigned int totalThreads = threadsPerBlock * blocks;
 
     std::vector<unsigned long long> h_seeds(totalThreads);
-    std::vector<unsigned long long> h_starts(totalThreads, 0ULL);
+    std::vector<unsigned long long> h_starts(totalThreads);
     std::vector<unsigned int> h_startX(totalThreads * 8);
     std::vector<unsigned int> h_startY(totalThreads * 8);
 
+    uint64_t base = ((uint64_t)start.v[1] << 32) | start.v[0];
+    unsigned long long stride = sequential ? static_cast<unsigned long long>(totalThreads) : 0ULL;
+    uint64_t startBase = sequential ? (base - (steps - 1) * stride) : base;
+    ecpoint startPoint = multiplyPoint(start, G());
+
     for(unsigned int i = 0; i < totalThreads; ++i) {
         h_seeds[i] = seed + i;
-        uint256 idx(i);
-        ecpoint p = addPoints(start, multiplyPoint(idx, G()));
+        uint64_t s = sequential ? (startBase - i) : 0ULL;
+        h_starts[i] = s;
+        ecpoint p;
+        if(sequential) {
+            uint256 k(s);
+            p = multiplyPoint(k, G());
+        } else {
+            uint256 idx(i);
+            p = addPoints(startPoint, multiplyPoint(idx, G()));
+        }
         for(int w = 0; w < 8; ++w) {
             h_startX[i*8 + w] = p.x.v[w];
             h_startY[i*8 + w] = p.y.v[w];
@@ -218,11 +238,12 @@ void CudaPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
-    pollardRandomWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
-                                                             d_seeds, d_starts,
-                                                             d_startX, d_startY,
-                                                             static_cast<unsigned int>(steps),
-                                                             d_windows, windowCount);
+    pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
+                                                       d_seeds, d_starts,
+                                                       d_startX, d_startY,
+                                                       static_cast<unsigned int>(steps),
+                                                       d_windows, windowCount,
+                                                       stride);
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     unsigned int h_count = 0;
