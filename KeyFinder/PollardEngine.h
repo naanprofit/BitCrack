@@ -41,9 +41,9 @@ public:
      * @param windowBits  Size of each bit window collected from a walk.
      * @param offsets     Bit offsets (within the hash) describing where each
      *                    window is collected.
-     * @param targets     RIPEMD160 hashes that the walk is attempting to
-     *                    recover.  Each target maintains its own set of
-     *                    constraints.
+     * @param targets     RIPEMD160 hashes (five 32-bit words, little-endian)
+     *                    that the walk is attempting to recover.  Each
+     *                    target maintains its own set of constraints.
      */
     PollardEngine(ResultCallback cb,
                   unsigned int windowBits,
@@ -85,13 +85,14 @@ public:
     // without a GPU.  Ownership of ``device`` is transferred to the engine.
     void setDevice(std::unique_ptr<PollardDevice> device);
 
-    // Public wrapper exposing the internal hashWindow helper
+    // Public wrapper exposing the internal hashWindow helper.  ``h`` must be
+    // supplied in little-endian word order.
     static secp256k1::uint256 publicHashWindow(const unsigned int h[5], unsigned int offset,
                                                unsigned int bits);
 
 private:
     struct TargetState {
-        std::array<unsigned int,5> hash;      // target RIPEMD160
+        std::array<unsigned int,5> hash;      // target RIPEMD160 (little-endian)
         std::vector<Constraint> constraints;  // gathered constraints
         std::set<unsigned int> seenOffsets;   // offsets already collected
     };

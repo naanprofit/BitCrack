@@ -18,15 +18,8 @@ CLPollardDevice::CLPollardDevice(PollardEngine &engine,
                                  const std::vector<unsigned int> &offsets,
                                  const std::vector<std::array<unsigned int,5>> &targets,
                                  bool debug)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _debug(debug) {
-    _targets.reserve(targets.size());
-    for(const auto &t : targets) {
-        uint256 v = uint256::importBigEndian(t.data(), 5);
-        std::array<unsigned int,5> le;
-        v.exportWords(le.data(), 5);
-        _targets.push_back(le);
-    }
-}
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets),
+      _targets(targets), _debug(debug) {}
 
 uint256 CLPollardDevice::maskBits(unsigned int bits) {
     uint256 m(0);
@@ -36,6 +29,9 @@ uint256 CLPollardDevice::maskBits(unsigned int bits) {
     return m;
 }
 
+// Extract ``bits`` bits starting at ``offset`` from the 160-bit hash ``h``.
+// The input hash is expected in little-endian word order to match the
+// representation used throughout the engine and GPU kernels.
 uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
     uint256 out(0);
     uint32_t word  = offset / 32;
