@@ -5,7 +5,6 @@
 #include <cstring>
 #include <vector>
 #include <random>
-#include <limits>
 #include <chrono>
 #include <thread>
 #include <sstream>
@@ -74,12 +73,16 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     uint256 seedCopy = seed;
     std::mt19937_64 rng(seedCopy.toUint64());
-    uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
-    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
     for(uint64_t i = 0; i < steps; ++i) {
-        uint64_t step = dist(rng);
-        uint256 stepVal(step);
-        k = k.add(stepVal);
+        uint256 stepVal;
+        do {
+            for(int j = 0; j < 4; ++j) {
+                uint64_t v = rng();
+                stepVal.v[j * 2]     = static_cast<uint32_t>(v & 0xffffffffULL);
+                stepVal.v[j * 2 + 1] = static_cast<uint32_t>(v >> 32);
+            }
+        } while(stepVal.isZero() || stepVal.cmp(N) >= 0);
+        k = addModN(k, stepVal);
         p = addPoints(p, multiplyPoint(stepVal, G()));
         if(checkPoint(p)) {
             PollardMatch m;
@@ -124,14 +127,18 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     uint256 seedCopy = seed;
     std::mt19937_64 rng(seedCopy.toUint64());
-    uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
-    std::uniform_int_distribution<uint64_t> dist(1, maxStep);
 
     uint256 kOffset(0);
     for(uint64_t i = 0; i < steps; ++i) {
-        uint64_t step = dist(rng);
-        uint256 stepVal(step);
-        kOffset = kOffset.add(stepVal);
+        uint256 stepVal;
+        do {
+            for(int j = 0; j < 4; ++j) {
+                uint64_t v = rng();
+                stepVal.v[j * 2]     = static_cast<uint32_t>(v & 0xffffffffULL);
+                stepVal.v[j * 2 + 1] = static_cast<uint32_t>(v >> 32);
+            }
+        } while(stepVal.isZero() || stepVal.cmp(N) >= 0);
+        kOffset = addModN(kOffset, stepVal);
         p = addPoints(p, multiplyPoint(stepVal, G()));
         if(checkPoint(p)) {
             PollardMatch m;

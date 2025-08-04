@@ -5,23 +5,23 @@
 #include "secp256k1.cuh" // EC point operations
 #include "ptx.cuh"       // byte order helpers
 
-__device__ void hashPublicKeyCompressed(const unsigned int*, unsigned int, unsigned int*);
+__device__ void hashPublicKeyCompressed(const uint32_t*, uint32_t, uint32_t*);
 
 // Result written by the kernel when a hash window matches a target.
 struct GpuPollardWindow {
-    unsigned int targetIdx;
-    unsigned int offset;
-    unsigned int bits;
+    uint32_t targetIdx;
+    uint32_t offset;
+    uint32_t bits;
     // Full 256-bit scalar of the distinguished point in little-endian word order
-    unsigned int k[8];
+    uint32_t k[8];
 };
 
 // Description of a window to test for each step.
 struct TargetWindow {
-    unsigned int targetIdx;
-    unsigned int offset;
-    unsigned int bits;
-    unsigned int target[5];
+    uint32_t targetIdx;
+    uint32_t offset;
+    uint32_t bits;
+    uint32_t target[5];
 };
 
 struct RNGState {
@@ -33,8 +33,8 @@ struct RNGState {
 // stores the full 256-bit scalar of a distinguished point along with the
 // corresponding hash160 digest so the host can perform window matching.
 struct CudaPollardMatch {
-    unsigned int k[8];
-    unsigned int hash[5];
+    uint32_t k[8];
+    uint32_t hash[5];
 };
 __device__ static inline uint64_t xorshift128plus(RNGState &state)
 {
@@ -52,19 +52,19 @@ __device__ static inline uint64_t xorshift128plus(RNGState &state)
 // Full secp256k1 group order expressed in little-endian words for scalar
 // arithmetic.  Scalars within this file are represented in little-endian
 // form where index 0 holds the least significant 32 bits.
-static __device__ __constant__ unsigned int ORDER[8] = {
+static __device__ __constant__ uint32_t ORDER[8] = {
     0xD0364141U, 0xBFD25E8CU, 0xAF48A03BU, 0xBAAEDCE6U,
     0xFFFFFFFEU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
 };
 
-__device__ static inline bool isZero256(const unsigned int a[8]) {
+__device__ static inline bool isZero256(const uint32_t a[8]) {
     for(int i = 0; i < 8; ++i) {
         if(a[i] != 0U) return false;
     }
     return true;
 }
 
-__device__ static inline bool ge256(const unsigned int a[8], const unsigned int b[8]) {
+__device__ static inline bool ge256(const uint32_t a[8], const uint32_t b[8]) {
     for(int i = 7; i >= 0; --i) {
         if(a[i] > b[i]) return true;
         if(a[i] < b[i]) return false;
@@ -72,25 +72,25 @@ __device__ static inline bool ge256(const unsigned int a[8], const unsigned int 
     return true; // equal
 }
 
-__device__ static inline void sub256(const unsigned int a[8], const unsigned int b[8], unsigned int r[8]) {
-    unsigned int borrow = 0U;
+__device__ static inline void sub256(const uint32_t a[8], const uint32_t b[8], uint32_t r[8]) {
+    uint32_t borrow = 0U;
     for(int i = 0; i < 8; ++i) {
-        unsigned int ai = a[i];
-        unsigned int bi = b[i];
-        unsigned int t = ai - bi;
-        unsigned int ri = t - borrow;
+        uint32_t ai = a[i];
+        uint32_t bi = b[i];
+        uint32_t t = ai - bi;
+        uint32_t ri = t - borrow;
         borrow = (ai < bi) | (t < borrow);
         r[i] = ri;
     }
 }
 
-__device__ static inline void addModN(const unsigned int a[8], const unsigned int b[8], unsigned int r[8]) {
-    unsigned int carry = 0U;
+__device__ static inline void addModN(const uint32_t a[8], const uint32_t b[8], uint32_t r[8]) {
+    uint32_t carry = 0U;
     for(int i = 0; i < 8; ++i) {
-        unsigned int ai = a[i];
-        unsigned int bi = b[i];
-        unsigned int s = ai + bi;
-        unsigned int ri = s + carry;
+        uint32_t ai = a[i];
+        uint32_t bi = b[i];
+        uint32_t s = ai + bi;
+        uint32_t ri = s + carry;
         carry = (s < ai) | (ri < s);
         r[i] = ri;
     }
@@ -100,19 +100,19 @@ __device__ static inline void addModN(const unsigned int a[8], const unsigned in
 }
 
 // Generate a random step in the range [1, ORDER-1]
-__device__ static inline void next_random_step(RNGState &state, unsigned int step[8]) {
+__device__ static inline void next_random_step(RNGState &state, uint32_t step[8]) {
     do {
         for(int i = 0; i < 4; ++i) {
             uint64_t v = xorshift128plus(state);
-            step[i * 2]     = (unsigned int)(v & 0xffffffffULL);
-            step[i * 2 + 1] = (unsigned int)(v >> 32);
+            step[i * 2]     = (uint32_t)(v & 0xffffffffULL);
+            step[i * 2 + 1] = (uint32_t)(v >> 32);
         }
     } while(isZero256(step) || ge256(step, ORDER));
 }
 
-static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
+static __device__ __forceinline__ void doRMD160FinalRound(const uint32_t hIn[5], uint32_t hOut[5])
 {
-    const unsigned int iv[5] = {
+    const uint32_t iv[5] = {
         0x67452301,
         0xefcdab89,
         0x98badcfe,
@@ -390,24 +390,24 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
 }
 
 extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
-                                       unsigned int *outCount,
-                                       unsigned int maxOut,
-                                       const unsigned int *seeds,
-                                       const unsigned int *starts,
-                                       const unsigned int *startX,
-                                       const unsigned int *startY,
-                                       unsigned int steps,
+                                       uint32_t *outCount,
+                                       uint32_t maxOut,
+                                       const uint32_t *seeds,
+                                       const uint32_t *starts,
+                                       const uint32_t *startX,
+                                       const uint32_t *startY,
+                                       uint32_t steps,
                                        const TargetWindow *windows,
-                                       unsigned int windowCount,
-                                       const unsigned int *strides)
+                                       uint32_t windowCount,
+                                       const uint32_t *strides)
 {
-    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int scalar[8];
+    uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    uint32_t scalar[8];
     for(int i = 0; i < 8; ++i) {
         scalar[i] = starts[tid * 8 + i];
     }
-    unsigned int px[8];
-    unsigned int py[8];
+    uint32_t px[8];
+    uint32_t py[8];
 
     if(startX && startY) {
         for(int i = 0; i < 8; ++i) {
@@ -418,7 +418,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
         scalarMultiplyBase(scalar, px, py);
     }
 
-    unsigned int stride[8];
+    uint32_t stride[8];
     for(int i = 0; i < 8; ++i) {
         stride[i] = strides ? strides[tid * 8 + i] : 0U;
     }
@@ -429,38 +429,38 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
         s0 ^= ((uint64_t)seeds[tid*8 + 5] << 32) | seeds[tid*8 + 4];
         s1 ^= ((uint64_t)seeds[tid*8 + 7] << 32) | seeds[tid*8 + 6];
         RNGState rng{ s0 ^ 1ULL, s1 + 1ULL };
-        for(unsigned int i = 0; i < steps; ++i) {
-            unsigned int step[8];
+        for(uint32_t i = 0; i < steps; ++i) {
+            uint32_t step[8];
             next_random_step(rng, step);
             addModN(scalar, step, scalar);
 
-            unsigned int sx[8];
-            unsigned int sy[8];
+            uint32_t sx[8];
+            uint32_t sy[8];
             scalarMultiplyBase(step, sx, sy);
-            unsigned int tx[8];
-            unsigned int ty[8];
+            uint32_t tx[8];
+            uint32_t ty[8];
             pointAdd(px, py, sx, sy, tx, ty);
             copyBigInt(tx, px);
             copyBigInt(ty, py);
 
-            unsigned int digest[5];
-            unsigned int finalHash[5];
+            uint32_t digest[5];
+            uint32_t finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
             for(int j = 0; j < 5; ++j) {
                 finalHash[j] = endian(finalHash[j]);
             }
 
-            for(unsigned int w = 0; w < windowCount; ++w) {
+            for(uint32_t w = 0; w < windowCount; ++w) {
                 TargetWindow tw = windows[w];
                 Hash160 hv = hashWindow(finalHash, tw.offset, tw.bits);
-                unsigned int words = (tw.bits + 31) / 32;
+                uint32_t words = (tw.bits + 31) / 32;
                 bool match = true;
-                for(unsigned int j = 0; j < words; ++j) {
+                for(uint32_t j = 0; j < words; ++j) {
                     if(hv.v[j] != tw.target[j]) { match = false; break; }
                 }
                 if(match) {
-                    unsigned int idx = atomicAdd(outCount, 1u);
+                    uint32_t idx = atomicAdd(outCount, 1u);
                     if(idx < maxOut) {
                         out[idx].targetIdx = tw.targetIdx;
                         out[idx].offset    = tw.offset;
@@ -473,28 +473,28 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             }
         }
     } else {
-        unsigned int sx[8];
-        unsigned int sy[8];
+        uint32_t sx[8];
+        uint32_t sy[8];
         scalarMultiplyBase(stride, sx, sy);
-        for(unsigned int i = 0; i < steps; ++i) {
-            unsigned int digest[5];
-            unsigned int finalHash[5];
+        for(uint32_t i = 0; i < steps; ++i) {
+            uint32_t digest[5];
+            uint32_t finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
             for(int j = 0; j < 5; ++j) {
                 finalHash[j] = endian(finalHash[j]);
             }
 
-            for(unsigned int w = 0; w < windowCount; ++w) {
+            for(uint32_t w = 0; w < windowCount; ++w) {
                 TargetWindow tw = windows[w];
                 Hash160 hv = hashWindow(finalHash, tw.offset, tw.bits);
-                unsigned int words = (tw.bits + 31) / 32;
+                uint32_t words = (tw.bits + 31) / 32;
                 bool match = true;
-                for(unsigned int j = 0; j < words; ++j) {
+                for(uint32_t j = 0; j < words; ++j) {
                     if(hv.v[j] != tw.target[j]) { match = false; break; }
                 }
                 if(match) {
-                    unsigned int idx = atomicAdd(outCount, 1u);
+                    uint32_t idx = atomicAdd(outCount, 1u);
                     if(idx < maxOut) {
                         out[idx].targetIdx = tw.targetIdx;
                         out[idx].offset    = tw.offset;
@@ -507,8 +507,8 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             }
 
             addModN(scalar, stride, scalar);
-            unsigned int tx[8];
-            unsigned int ty[8];
+            uint32_t tx[8];
+            uint32_t ty[8];
             pointAdd(px, py, sx, sy, tx, ty);
             copyBigInt(tx, px);
             copyBigInt(ty, py);
