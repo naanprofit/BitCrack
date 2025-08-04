@@ -1,6 +1,7 @@
 NAME=CudaKeySearchDevice
 CPPSRC:=$(wildcard *.cpp)
 CUSRC:=$(wildcard *.cu)
+MATHSRC:=$(CUDA_MATH)/sha256_constants.cu $(CUDA_MATH)/ripemd160_constants.cu
 
 .RECIPEPREFIX := ;
 
@@ -12,7 +13,13 @@ cuda:
 ;done
 
 ;for file in ${CUSRC} ; do\
-;   ${NVCC} -c $$file -o $$file".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;   base=$(basename $$file); \
+;   ${NVCC} -c $$file -o $$base".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;done
+
+;for file in ${MATHSRC} ; do\
+;   base=$(basename $$file); \
+;   ${NVCC} -c $$file -o $$base".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
 ;${NVCC} -dlink -o cuda_libs.o *.o -lcudadevrt -lcudart
