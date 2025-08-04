@@ -18,8 +18,8 @@ cuda:
 ;done
 
 ;for file in ${MATHSRC} ; do\
-;   base=$(basename $$file); \
-;   ${NVCC} -c $$file -o ${CUDA_MATH}/$$base".o" ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;   file_name=$${file##*/}; \
+;   ${NVCC} -c $$file -o ${CUDA_MATH}/$${file_name%.cu}.cu.o ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
 ;${NVCC} ${NVCCFLAGS} -dlink -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
