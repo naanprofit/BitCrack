@@ -385,17 +385,12 @@ void scalarMultiplyBase(const __private uint *k, __private uint *rx, __private u
         copyBigInt(r1y, ry);
         return;
     }
-    uint base2x[8];
-    uint base2y[8];
-    uint gx[8];
-    uint beta[8];
-    copyBigIntConst(_GX, gx);
-    copyBigIntConst(_BETA, beta);
-    mulModP(gx, beta, base2x);
-    copyBigIntConst(_GY, base2y);
     uint r2x[8];
     uint r2y[8];
-    scalarMultiplySmall(base2x, base2y, s.k2, r2x, r2y);
+    scalarMultiplySmall(base1x, base1y, s.k2, r2x, r2y);
+    uint beta[8];
+    copyBigIntConst(_BETA, beta);
+    mulModP(r2x, beta, r2x);
     if(s.k2Neg) {
         uint ny[8];
         negModP(r2y, ny);
