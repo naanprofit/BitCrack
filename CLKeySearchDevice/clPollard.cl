@@ -413,7 +413,8 @@ void doRMD160FinalRound(const __private unsigned int hIn[5], __private unsigned 
         0xc3d2e1f0
     };
 
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 5; ++i) {
+        // Apply the matching RIPEMD-160 IV; no index rotation
         hOut[i] = hIn[i] + iv[i];
     }
 }

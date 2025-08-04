@@ -86,7 +86,8 @@ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
         0xc3d2e1f0
     };
 
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 5; ++i) {
+        // Add the appropriate RIPEMD-160 IV term directly
         hOut[i] = hIn[i] + iv[i];
     }
 }

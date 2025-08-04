@@ -120,7 +120,8 @@ static __device__ __forceinline__ void doRMD160FinalRound(const uint32_t hIn[5],
         0xc3d2e1f0
     };
 
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < 5; ++i) {
+        // Add the corresponding RIPEMD-160 IV directly
         hOut[i] = hIn[i] + iv[i];
     }
 }
