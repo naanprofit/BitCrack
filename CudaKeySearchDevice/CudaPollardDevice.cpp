@@ -55,7 +55,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        unsigned int steps,
                                        const GpuTargetWindow *windows,
                                        unsigned int windowCount,
-                                       unsigned long long stride);
+                                       const unsigned int *stride);
 
 CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      unsigned int windowBits,
@@ -82,19 +82,25 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     // Build per-thread seeds and starting scalars using the ``start`` value
     std::vector<unsigned int> h_seeds(totalThreads * 8);
     std::vector<unsigned int> h_starts(totalThreads * 8);
+    std::vector<unsigned int> h_stride(totalThreads * 8);
+    uint256 strideVal = sequential ? uint256(totalThreads) : uint256(0);
     for(unsigned int i = 0; i < totalThreads; ++i) {
         uint256 sSeed(seed + i);
         sSeed.exportWords(&h_seeds[i*8], 8);
         uint256 sStart = addModN(start, uint256(i));
         sStart.exportWords(&h_starts[i*8], 8);
+        strideVal.exportWords(&h_stride[i*8], 8);
     }
 
     unsigned int *d_seeds = nullptr;
     unsigned int *d_starts = nullptr;
+    unsigned int *d_stride = nullptr;
     cudaMalloc(&d_seeds, sizeof(unsigned int) * totalThreads * 8);
     cudaMalloc(&d_starts, sizeof(unsigned int) * totalThreads * 8);
+    cudaMalloc(&d_stride, sizeof(unsigned int) * totalThreads * 8);
     cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_stride, h_stride.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
 
     // Prepare target windows
     std::vector<GpuTargetWindow> h_windows;
@@ -126,13 +132,12 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
-    unsigned long long stride = sequential ? static_cast<unsigned long long>(totalThreads) : 0ULL;
     pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
                                                        d_seeds, d_starts,
                                                        nullptr, nullptr,
                                                        static_cast<unsigned int>(steps),
                                                        d_windows, windowCount,
-                                                       stride);
+                                                       d_stride);
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     unsigned int h_count = 0;
@@ -156,6 +161,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     cudaFree(d_count);
     cudaFree(d_seeds);
     cudaFree(d_starts);
+    cudaFree(d_stride);
     if(d_windows) cudaFree(d_windows);
     cudaStreamDestroy(stream);
 }
@@ -178,10 +184,10 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     std::vector<unsigned int> h_starts(totalThreads * 8);
     std::vector<unsigned int> h_startX(totalThreads * 8);
     std::vector<unsigned int> h_startY(totalThreads * 8);
+    std::vector<unsigned int> h_stride(totalThreads * 8);
 
     uint256 base = start;
-    unsigned long long stride = sequential ? static_cast<unsigned long long>(totalThreads) : 0ULL;
-    uint256 strideVal(static_cast<uint64_t>(stride));
+    uint256 strideVal = sequential ? uint256(totalThreads) : uint256(0);
     uint256 startBase = base;
     if(sequential) {
         uint256 offset = multiplyModN(strideVal, uint256(steps - 1));
@@ -194,6 +200,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         sSeed.exportWords(&h_seeds[i*8], 8);
         uint256 s = sequential ? subModN(startBase, uint256(i)) : uint256(0);
         s.exportWords(&h_starts[i*8], 8);
+        strideVal.exportWords(&h_stride[i*8], 8);
         ecpoint p;
         if(sequential) {
             p = multiplyPoint(s, G());
@@ -211,14 +218,17 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     unsigned int *d_starts = nullptr;
     unsigned int *d_startX = nullptr;
     unsigned int *d_startY = nullptr;
+    unsigned int *d_stride = nullptr;
     cudaMalloc(&d_seeds, sizeof(unsigned int) * totalThreads * 8);
     cudaMalloc(&d_starts, sizeof(unsigned int) * totalThreads * 8);
     cudaMalloc(&d_startX, sizeof(unsigned int) * totalThreads * 8);
     cudaMalloc(&d_startY, sizeof(unsigned int) * totalThreads * 8);
+    cudaMalloc(&d_stride, sizeof(unsigned int) * totalThreads * 8);
     cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_startX, h_startX.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_startY, h_startY.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_stride, h_stride.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
 
     // Prepare target windows
     std::vector<GpuTargetWindow> h_windows;
@@ -255,7 +265,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
                                                        d_startX, d_startY,
                                                        static_cast<unsigned int>(steps),
                                                        d_windows, windowCount,
-                                                       stride);
+                                                       d_stride);
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     unsigned int h_count = 0;
@@ -281,6 +291,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     cudaFree(d_starts);
     cudaFree(d_startX);
     cudaFree(d_startY);
+    cudaFree(d_stride);
     if(d_windows) cudaFree(d_windows);
     cudaStreamDestroy(stream);
 }

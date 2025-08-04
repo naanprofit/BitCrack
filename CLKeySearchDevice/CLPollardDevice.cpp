@@ -106,8 +106,9 @@ void runWalk(PollardEngine &engine,
 
     cl_mem d_out = clCreateBuffer(ctx.getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardWindowCL) * maxOut, NULL, &err);
     cl_mem d_count = clCreateBuffer(ctx.getContext(), CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &err);
-    cl_mem d_seeds = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_ulong) * global, NULL, &err);
-    cl_mem d_starts = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_ulong) * global, NULL, &err);
+    cl_mem d_seeds = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_uint) * global * 8, NULL, &err);
+    cl_mem d_starts = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_uint) * global * 8, NULL, &err);
+    cl_mem d_stride = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_uint) * global * 8, NULL, &err);
     cl_mem d_startX = NULL;
     cl_mem d_startY = NULL;
     if(wild) {
@@ -135,12 +136,17 @@ void runWalk(PollardEngine &engine,
     cl_uint windowCount = static_cast<cl_uint>(windowList.size());
     cl_mem d_windows = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(TargetWindowCL) * windowCount, NULL, &err);
 
-    std::vector<cl_ulong> h_seeds(global);
-    std::vector<cl_ulong> h_starts(global);
+    std::vector<cl_uint> h_seeds(global * 8);
+    std::vector<cl_uint> h_starts(global * 8);
+    std::vector<cl_uint> h_stride(global * 8);
 
-    uint64_t base = start ? (((uint64_t)start->v[1] << 32) | start->v[0]) : 0ULL;
-    cl_ulong stride = sequential ? (cl_ulong)global : 0UL;
-    uint64_t startBase = (wild && sequential) ? (base - (steps - 1) * stride) : base;
+    uint256 base = start ? *start : uint256(0);
+    uint256 strideVal = sequential ? uint256(global) : uint256(0);
+    uint256 startBase = base;
+    if(wild && sequential) {
+        uint256 offset = multiplyModN(strideVal, uint256(steps - 1));
+        startBase = subModN(base, offset);
+    }
 
     std::vector<cl_uint> h_startX;
     std::vector<cl_uint> h_startY;
@@ -154,14 +160,15 @@ void runWalk(PollardEngine &engine,
         basePoint = multiplyPoint(*start, G());
     }
     for(size_t i = 0; i < global; ++i) {
-        h_seeds[i] = seed + i;
+        uint256 sSeed(seed + i);
+        sSeed.exportWords(&h_seeds[i*8], 8);
+        strideVal.exportWords(&h_stride[i*8], 8);
         if(wild) {
-            uint64_t s = sequential ? (startBase - i) : 0ULL;
-            h_starts[i] = s;
+            uint256 s = sequential ? subModN(startBase, uint256(i)) : uint256(0);
+            s.exportWords(&h_starts[i*8], 8);
             ecpoint p;
             if(sequential) {
-                uint256 k(s);
-                p = multiplyPoint(k, G());
+                p = multiplyPoint(s, G());
             } else {
                 uint256 idx((uint64_t)i);
                 p = addPoints(basePoint, multiplyPoint(idx, G()));
@@ -171,15 +178,16 @@ void runWalk(PollardEngine &engine,
                 h_startY[i * 8 + w] = p.y.v[w];
             }
         } else {
-            uint64_t s = base + i;
-            h_starts[i] = s;
+            uint256 sStart = addModN(base, uint256(i));
+            sStart.exportWords(&h_starts[i*8], 8);
         }
     }
 
     cl_command_queue q = ctx.getQueue();
     cl_uint zero = 0;
-    clEnqueueWriteBuffer(q, d_seeds, CL_TRUE, 0, sizeof(cl_ulong) * global, h_seeds.data(), 0, NULL, NULL);
-    clEnqueueWriteBuffer(q, d_starts, CL_TRUE, 0, sizeof(cl_ulong) * global, h_starts.data(), 0, NULL, NULL);
+    clEnqueueWriteBuffer(q, d_seeds, CL_TRUE, 0, sizeof(cl_uint) * global * 8, h_seeds.data(), 0, NULL, NULL);
+    clEnqueueWriteBuffer(q, d_starts, CL_TRUE, 0, sizeof(cl_uint) * global * 8, h_starts.data(), 0, NULL, NULL);
+    clEnqueueWriteBuffer(q, d_stride, CL_TRUE, 0, sizeof(cl_uint) * global * 8, h_stride.data(), 0, NULL, NULL);
     clEnqueueWriteBuffer(q, d_count, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL);
     if(windowCount > 0) {
         clEnqueueWriteBuffer(q, d_windows, CL_TRUE, 0, sizeof(TargetWindowCL) * windowCount, windowList.data(), 0, NULL, NULL);
@@ -200,7 +208,7 @@ void runWalk(PollardEngine &engine,
     clSetKernelArg(kernel, 7, sizeof(cl_uint), &stepsArg);
     clSetKernelArg(kernel, 8, sizeof(cl_mem), &d_windows);
     clSetKernelArg(kernel, 9, sizeof(cl_uint), &windowCount);
-    clSetKernelArg(kernel, 10, sizeof(cl_ulong), &stride);
+    clSetKernelArg(kernel, 10, sizeof(cl_mem), &d_stride);
 
     clEnqueueNDRangeKernel(q, kernel, 1, NULL, &global, &local, 0, NULL, NULL);
 
@@ -227,6 +235,7 @@ void runWalk(PollardEngine &engine,
     clReleaseMemObject(d_count);
     clReleaseMemObject(d_seeds);
     clReleaseMemObject(d_starts);
+    clReleaseMemObject(d_stride);
     if(d_startX) clReleaseMemObject(d_startX);
     if(d_startY) clReleaseMemObject(d_startY);
     clReleaseMemObject(d_windows);

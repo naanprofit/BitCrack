@@ -34,10 +34,56 @@ ulong xorshift128plus(__private RNGState *state)
     return x + y;
 }
 
-ulong next_random_step(__private RNGState *state)
-{
-    const ulong ORDER_MINUS_ONE = (ulong)0xBFD25E8CD0364140UL;
-    return (xorshift128plus(state) % ORDER_MINUS_ONE) + 1UL;
+// secp256k1 group order in little-endian words
+__constant uint ORDER[8] = {
+    0xD0364141U, 0xBFD25E8CU, 0xAF48A03BU, 0xBAAEDCE6U,
+    0xFFFFFFFEU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
+};
+
+int isZero256(const uint a[8]) {
+    for(int i=0;i<8;i++) {
+        if(a[i] != 0U) return 0;
+    }
+    return 1;
+}
+
+int ge256(const uint a[8], const uint b[8]) {
+    for(int i=7;i>=0;--i) {
+        if(a[i] > b[i]) return 1;
+        if(a[i] < b[i]) return 0;
+    }
+    return 1;
+}
+
+void sub256(const uint a[8], const uint b[8], uint r[8]) {
+    ulong borrow = 0UL;
+    for(int i=0;i<8;i++) {
+        ulong diff = (ulong)a[i] - b[i] - borrow;
+        r[i] = (uint)diff;
+        borrow = (diff >> 63) & 1UL;
+    }
+}
+
+void addModN(const uint a[8], const uint b[8], uint r[8]) {
+    ulong carry = 0UL;
+    for(int i=0;i<8;i++) {
+        ulong sum = (ulong)a[i] + b[i] + carry;
+        r[i] = (uint)sum;
+        carry = sum >> 32;
+    }
+    if(carry || ge256(r, ORDER)) {
+        sub256(r, ORDER, r);
+    }
+}
+
+void next_random_step(__private RNGState *state, uint step[8]) {
+    do {
+        for(int i=0;i<4;i++) {
+            ulong v = xorshift128plus(state);
+            step[i*2] = (uint)(v & 0xffffffffUL);
+            step[i*2+1] = (uint)(v >> 32);
+        }
+    } while(isZero256(step) || ge256(step, ORDER));
 }
 unsigned int endian(unsigned int x)
 {
@@ -101,18 +147,20 @@ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bi
 __kernel void pollard_walk(__global PollardWindow *out,
                            __global volatile uint *outCount,
                            uint maxOut,
-                           __global ulong *seeds,
-                           __global ulong *starts,
+                           __global uint *seeds,
+                           __global uint *starts,
                            __global uint *startX,
                            __global uint *startY,
                            uint steps,
                            __global const TargetWindow *windows,
                            uint windowCount,
-                           ulong stride)
+                           __global uint *strides)
 {
     size_t gid = get_global_id(0);
-    ulong scalar = starts[gid];
-    const ulong ORDER = (ulong)0xBFD25E8CD0364141UL;
+    uint scalar[8];
+    for(int i=0;i<8;i++) {
+        scalar[i] = starts[gid*8 + i];
+    }
 
     uint px[8];
     uint py[8];
@@ -125,12 +173,19 @@ __kernel void pollard_walk(__global PollardWindow *out,
         scalarMultiplyBase(scalar, px, py);
     }
 
-    if(stride == 0UL) {
-        RNGState rng = { seeds[gid] ^ (ulong)1, seeds[gid] + (ulong)1 };
+    uint stride[8];
+    for(int i=0;i<8;i++) {
+        stride[i] = strides ? strides[gid*8 + i] : 0U;
+    }
+
+    if(isZero256(stride)) {
+        ulong s0 = ((ulong)seeds[gid*8 + 1] << 32) | seeds[gid*8 + 0];
+        ulong s1 = ((ulong)seeds[gid*8 + 3] << 32) | seeds[gid*8 + 2];
+        RNGState rng = { s0 ^ (ulong)1, s1 + (ulong)1 };
         for(uint i = 0; i < steps; i++) {
-            ulong step = next_random_step(&rng);
-            scalar += step;
-            scalar %= ORDER;
+            uint step[8];
+            next_random_step(&rng, step);
+            addModN(scalar, step, scalar);
 
             uint sx[8];
             uint sy[8];
@@ -161,11 +216,14 @@ __kernel void pollard_walk(__global PollardWindow *out,
                         out[slot].offset    = tw.offset;
                         out[slot].bits      = tw.bits;
                         uint modBits = tw.offset + tw.bits;
-                        ulong mask = (modBits >= 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << modBits) - 1UL);
-                        ulong frag = scalar & mask;
-                        out[slot].k[0] = (uint)(frag & 0xffffffffUL);
-                        out[slot].k[1] = (uint)(frag >> 32);
-                        for(int j = 2; j < 8; j++) {
+                        uint wordsK = (modBits + 31) / 32;
+                        for(uint j = 0; j < wordsK; j++) {
+                            out[slot].k[j] = scalar[j];
+                        }
+                        if(modBits % 32) {
+                            out[slot].k[wordsK-1] &= ((1U << (modBits % 32)) - 1U);
+                        }
+                        for(uint j = wordsK; j < 8; j++) {
                             out[slot].k[j] = 0U;
                         }
                     }
@@ -197,19 +255,21 @@ __kernel void pollard_walk(__global PollardWindow *out,
                         out[slot].offset    = tw.offset;
                         out[slot].bits      = tw.bits;
                         uint modBits = tw.offset + tw.bits;
-                        ulong mask = (modBits >= 64) ? (ulong)0xffffffffffffffffUL : (((ulong)1 << modBits) - 1UL);
-                        ulong frag = scalar & mask;
-                        out[slot].k[0] = (uint)(frag & 0xffffffffUL);
-                        out[slot].k[1] = (uint)(frag >> 32);
-                        for(int j = 2; j < 8; j++) {
+                        uint wordsK = (modBits + 31) / 32;
+                        for(uint j = 0; j < wordsK; j++) {
+                            out[slot].k[j] = scalar[j];
+                        }
+                        if(modBits % 32) {
+                            out[slot].k[wordsK-1] &= ((1U << (modBits % 32)) - 1U);
+                        }
+                        for(uint j = wordsK; j < 8; j++) {
                             out[slot].k[j] = 0U;
                         }
                     }
                 }
             }
 
-            scalar += stride;
-            scalar %= ORDER;
+            addModN(scalar, stride, scalar);
             uint tx[8];
             uint ty[8];
             pointAdd(px, py, sx, sy, tx, ty);
