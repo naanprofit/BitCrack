@@ -460,6 +460,7 @@ namespace secp256k1 {
             return r;
         }
 
+
         uint256 negModP(const uint256 &x);
 	uint256 negModN(const uint256 &x);
 
@@ -473,8 +474,27 @@ namespace secp256k1 {
 
 	uint256 invModP(const uint256 &x);
 
-	bool isPointAtInfinity(const ecpoint &p);
-	ecpoint multiplyPoint(const uint256 &k, const ecpoint &p);
+        bool isPointAtInfinity(const ecpoint &p);
+        ecpoint multiplyPoint(const uint256 &k, const ecpoint &p);
+        ecpoint multiplyPointSmall(const uint256 &k, const ecpoint &p);
+
+        inline ecpoint glvEndomorphism(const ecpoint &p)
+        {
+            return ecpoint(multiplyModP(p.x, glvBeta()), p.y);
+        }
+
+        inline ecpoint glvRecombine(const GLVSplit &s, const ecpoint &p1, const ecpoint &p2)
+        {
+            ecpoint r1 = p1;
+            ecpoint r2 = p2;
+            if(s.k1Neg) {
+                r1.y = negModP(r1.y);
+            }
+            if(s.k2Neg) {
+                r2.y = negModP(r2.y);
+            }
+            return addPoints(r1, r2);
+        }
 
 	uint256 addModN(const uint256 &a, const uint256 &b);
 	uint256 subModN(const uint256 &a, const uint256 &b);
