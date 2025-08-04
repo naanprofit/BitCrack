@@ -127,7 +127,7 @@ static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn
     };
 
     for(int i = 0; i < 5; i++) {
-        hOut[i] = endian(hIn[i] + iv[(i + 1) % 5]);
+        hOut[i] = hIn[i] + iv[(i + 1) % 5];
     }
 }
 

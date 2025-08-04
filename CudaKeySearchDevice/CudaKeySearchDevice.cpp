@@ -299,14 +299,16 @@ bool CudaKeySearchDevice::verifyKey(const secp256k1::uint256 &privateKey, const 
     p.x.exportWords(xWords, 8, secp256k1::uint256::BigEndian);
     p.y.exportWords(yWords, 8, secp256k1::uint256::BigEndian);
 
-    unsigned int digest[5];
+    unsigned int be[5];
     if(compressed) {
-        Hash::hashPublicKeyCompressed(xWords, yWords, digest);
+        Hash::hashPublicKeyCompressed(xWords, yWords, be);
     } else {
-        Hash::hashPublicKey(xWords, yWords, digest);
+        Hash::hashPublicKey(xWords, yWords, be);
     }
 
-    for(int i = 0; i < 5; i++) {
+    unsigned int digest[5];
+    for(int i = 0; i < 5; ++i) {
+        digest[i] = util::endian(be[4 - i]);
         if(digest[i] != hash[i]) {
             return false;
         }

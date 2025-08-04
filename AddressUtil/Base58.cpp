@@ -41,17 +41,27 @@ secp256k1::uint256 Base58::toBigInt(const std::string &s)
 	return value;
 }
 
+// Convert a base58check-encoded address to a 160-bit hash in little-endian
+// order.  The input string is interpreted as the standard 25-byte address
+// (1-byte version, 20-byte hash160, 4-byte checksum).  The returned array
+// places the least-significant 32-bit word first so bit offsets are measured
+// from the LSB of the hash.
 void Base58::toHash160(const std::string &s, unsigned int hash[5])
 {
-	secp256k1::uint256 value = toBigInt(s);
-	unsigned int words[6];
+        secp256k1::uint256 value = toBigInt(s);
+        unsigned int words[6];
 
-	value.exportWords(words, 6, secp256k1::uint256::BigEndian);
+        value.exportWords(words, 6, secp256k1::uint256::BigEndian);
 
-	// Extract words, ignore checksum
-	for(int i = 0; i < 5; i++) {
-		hash[i] = words[i];
-	}
+        // Extract hash words (ignoring checksum) and convert from big-endian
+        // to little-endian word order and byte order
+        for(int i = 0; i < 5; i++) {
+                unsigned int w = words[4 - i];
+                hash[i] = ((w & 0x000000ffU) << 24) |
+                          ((w & 0x0000ff00U) << 8)  |
+                          ((w & 0x00ff0000U) >> 8)  |
+                          ((w & 0xff000000U) >> 24);
+        }
 }
 
 bool Base58::isBase58(std::string s)
