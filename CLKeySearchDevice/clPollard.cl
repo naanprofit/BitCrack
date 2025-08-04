@@ -59,20 +59,26 @@ int ge256(const uint a[8], const uint b[8]) {
 }
 
 void sub256(const uint a[8], const uint b[8], uint r[8]) {
-    ulong borrow = 0UL;
+    uint borrow = 0U;
     for(int i=0;i<8;i++) {
-        ulong diff = (ulong)a[i] - b[i] - borrow;
-        r[i] = (uint)diff;
-        borrow = (diff >> 63) & 1UL;
+        uint ai = a[i];
+        uint bi = b[i];
+        uint t = ai - bi;
+        uint ri = t - borrow;
+        borrow = (ai < bi) | (t < borrow);
+        r[i] = ri;
     }
 }
 
 void addModN(const uint a[8], const uint b[8], uint r[8]) {
-    ulong carry = 0UL;
+    uint carry = 0U;
     for(int i=0;i<8;i++) {
-        ulong sum = (ulong)a[i] + b[i] + carry;
-        r[i] = (uint)sum;
-        carry = sum >> 32;
+        uint ai = a[i];
+        uint bi = b[i];
+        uint s = ai + bi;
+        uint ri = s + carry;
+        carry = (s < ai) | (ri < s);
+        r[i] = ri;
     }
     if(carry || ge256(r, ORDER)) {
         sub256(r, ORDER, r);
