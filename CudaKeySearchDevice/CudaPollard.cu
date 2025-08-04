@@ -253,7 +253,8 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
         if((scalar & mask) == 0ULL) {
             unsigned int digest[5];
             unsigned int finalHash[5];
-            hashPublicKeyCompressed(px, py[7], digest);
+            // py[0] holds the least significant word; py[0] & 1 yields the parity bit
+            hashPublicKeyCompressed(px, py[0] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
 
             unsigned int idx = atomicAdd(outCount, 1u);
@@ -315,7 +316,8 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
 
             unsigned int digest[5];
             unsigned int finalHash[5];
-            hashPublicKeyCompressed(px, py[7], digest);
+            // py[0] holds the least significant word; py[0] & 1 yields the parity bit
+            hashPublicKeyCompressed(px, py[0] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
 
             for(unsigned int w = 0; w < windowCount; ++w) {
@@ -346,7 +348,8 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
         for(unsigned int i = 0; i < steps; ++i) {
             unsigned int digest[5];
             unsigned int finalHash[5];
-            hashPublicKeyCompressed(px, py[7], digest);
+            // py[0] holds the least significant word; py[0] & 1 yields the parity bit
+            hashPublicKeyCompressed(px, py[0] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
 
             for(unsigned int w = 0; w < windowCount; ++w) {
