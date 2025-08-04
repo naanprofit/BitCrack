@@ -23,6 +23,37 @@ __constant__ unsigned long long _BLOOM_FILTER_MASK64[1];
 
 __constant__ unsigned int _USE_BLOOM_FILTER[1];
 
+struct Hash160 {
+        unsigned int v[5];
+};
+
+__device__ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+{
+        Hash160 out;
+        for(int i = 0; i < 5; ++i) {
+                out.v[i] = 0u;
+        }
+        unsigned int word = offset / 32;
+        unsigned int bit = offset % 32;
+        unsigned int span = bit + bits;
+        unsigned int words = (span + 31) / 32;
+        for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+                unsigned long long val = ((unsigned long long)h[word + i]) >> bit;
+                if(bit && word + i + 1 < 5) {
+                        val |= ((unsigned long long)h[word + i + 1]) << (32 - bit);
+                }
+                out.v[i] = (unsigned int)(val & 0xffffffffULL);
+        }
+        if(span % 32) {
+                unsigned int mask = (1u << (span % 32)) - 1u;
+                out.v[words - 1] &= mask;
+        }
+        for(unsigned int i = words; i < 5; ++i) {
+                out.v[i] = 0u;
+        }
+        return out;
+}
+
 
 static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {

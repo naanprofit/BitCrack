@@ -129,7 +129,8 @@ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bi
     for(int i=0;i<5;i++) out.v[i]=0u;
     unsigned int word = offset / 32;
     unsigned int bit  = offset % 32;
-    unsigned int words = (bits + 31) / 32;
+    unsigned int span = bit + bits;
+    unsigned int words = (span + 31) / 32;
     for(unsigned int i=0;i<words && word + i < 5; i++) {
         ulong val = ((ulong)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -137,9 +138,12 @@ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bi
         }
         out.v[i] = (uint)(val & 0xffffffffUL);
     }
-    if(bits % 32) {
-        uint mask = (1u << (bits % 32)) - 1u;
+    if(span % 32) {
+        uint mask = (1u << (span % 32)) - 1u;
         out.v[words-1] &= mask;
+    }
+    for(unsigned int i=words;i<5;i++) {
+        out.v[i]=0u;
     }
     return out;
 }

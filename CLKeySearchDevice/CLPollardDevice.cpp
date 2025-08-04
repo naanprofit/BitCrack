@@ -29,7 +29,8 @@ uint256 CLPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int offs
     uint256 out(0);
     unsigned int word = offset / 32;
     unsigned int bit = offset % 32;
-    unsigned int words = (bits + 31) / 32;
+    unsigned int span = bit + bits;
+    unsigned int words = (span + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -37,8 +38,8 @@ uint256 CLPollardDevice::hashWindowLE(const unsigned int h[5], unsigned int offs
         }
         out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
-    if(bits % 32) {
-        unsigned int mask = (1u << (bits % 32)) - 1u;
+    if(span % 32) {
+        unsigned int mask = (1u << (span % 32)) - 1u;
         out.v[words - 1] &= mask;
     }
     for(unsigned int i = words; i < 8; ++i) {
