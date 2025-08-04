@@ -1,3 +1,6 @@
+#pragma OPENCL EXTENSION cl_khr_int64 : enable
+#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
+
 // Window reported back to the host when a hash window matches one of the
 // provided targets.  The scalar fragment contains the low ``offset + bits``
 // bits of the walk's scalar value.
