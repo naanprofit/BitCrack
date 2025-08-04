@@ -360,10 +360,6 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
 
     _reconstructionSuccess++;
 
-    if(!_callback) {
-        return;
-    }
-
     KeySearchResult r;
     r.privateKey = priv;
     r.publicKey = pub;
