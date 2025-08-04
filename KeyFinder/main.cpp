@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <array>
+#include <cctype>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -47,8 +48,9 @@ typedef struct {
     unsigned int pointsPerThread = 0;
     
     int compression = PointCompressionType::COMPRESSED;
- 
+
     std::vector<std::string> targets;
+    std::vector<std::array<unsigned int,5>> hash160Targets;
 
     std::string targetsFile = "";
 
@@ -242,6 +244,7 @@ void usage()
     printf("--U HEX                Upper bound for Pollard search (hex)\n");
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
+    printf("--hash160 HEX          Add a target specified as a 40-hex-character RIPEMD160 hash\n");
     printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
     printf("--offsets LIST         Comma-separated bit offsets for CRT windows (required)\n");
     printf("--window-size N        Bits per window (default 8)\n");
@@ -450,8 +453,12 @@ int runBruteForce()
 
         if(!_config.targetsFile.empty()) {
             f.setTargets(_config.targetsFile);
-        } else {
+        } else if(!_config.targets.empty()) {
             f.setTargets(_config.targets);
+        }
+
+        for(const auto &h : _config.hash160Targets) {
+            f.addTarget(h.data());
         }
 
         f.run();
@@ -507,6 +514,10 @@ int runPollard()
             }
             targetHashes.push_back(arr);
         }
+    }
+
+    for(const auto &h : _config.hash160Targets) {
+        targetHashes.push_back(h);
     }
 
     if(!offsets.empty()) {
@@ -620,6 +631,33 @@ bool parseShare(const std::string &s, uint32_t &idx, uint32_t &total)
     return true;
 }
 
+bool parseHash160(const std::string &s, unsigned int hash[5])
+{
+    if(s.length() != 40) {
+        return false;
+    }
+
+    for(char c : s) {
+        if(!std::isxdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+
+    for(int i = 0; i < 5; i++) {
+        std::string word = s.substr((4 - i) * 8, 8);
+        unsigned int w;
+        std::stringstream ss;
+        ss << std::hex << word;
+        ss >> w;
+        hash[i] = ((w & 0x000000ffU) << 24) |
+                  ((w & 0x0000ff00U) << 8)  |
+                  ((w & 0x00ff0000U) >> 8)  |
+                  ((w & 0xff000000U) >> 24);
+    }
+
+    return true;
+}
+
 int main(int argc, char **argv)
 {
 	bool optCompressed = false;
@@ -681,6 +719,7 @@ int main(int argc, char **argv)
     parser.add("", "--U", true);
     parser.add("", "--continue", true);
     parser.add("", "--share", true);
+    parser.add("", "--hash160", true);
     parser.add("", "--stride", true);
     parser.add("", "--pollard", false);
     parser.add("", "--offsets", true);
@@ -780,6 +819,16 @@ int main(int argc, char **argv)
                     throw std::string("Invalid argument");
                 }
                 optShares = true;
+            } else if(optArg.equals("", "--hash160")) {
+                unsigned int h[5];
+                if(!parseHash160(optArg.arg, h)) {
+                    throw std::string("invalid argument: expected 40 hex characters");
+                }
+                std::array<unsigned int,5> arr;
+                for(int j=0; j<5; j++) {
+                    arr[j] = h[j];
+                }
+                _config.hash160Targets.push_back(arr);
             } else if(optArg.equals("", "--stride")) {
                 try {
                     _config.stride = secp256k1::uint256(optArg.arg);
@@ -878,21 +927,21 @@ int main(int argc, char **argv)
 
     // If there are no operands, then we must be reading from a file, otherwise
     // expect addresses on the commandline
-	if(ops.size() == 0) {
-		if(_config.targetsFile.length() == 0) {
-			Logger::log(LogLevel::Error, "Missing arguments");
-			usage();
-			return 1;
-		}
-	} else {
-		for(unsigned int i = 0; i < ops.size(); i++) {
+        if(ops.size() == 0) {
+                if(_config.targetsFile.length() == 0 && _config.hash160Targets.size() == 0) {
+                        Logger::log(LogLevel::Error, "Missing arguments");
+                        usage();
+                        return 1;
+                }
+        } else {
+                for(unsigned int i = 0; i < ops.size(); i++) {
             if(!Address::verifyAddress(ops[i])) {
                 Logger::log(LogLevel::Error, "Invalid address '" + ops[i] + "'");
                 return 1;
             }
-			_config.targets.push_back(ops[i]);
-		}
-	}
+                        _config.targets.push_back(ops[i]);
+                }
+        }
     
     // Calculate where to start and end in the keyspace when the --share option is used
     if(optShares) {

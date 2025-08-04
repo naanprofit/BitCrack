@@ -132,6 +132,13 @@ void KeyFinder::setTargetsOnDevice()
     _device->setTargets(_targets);
 }
 
+void KeyFinder::addTarget(const unsigned int hash[5])
+{
+    KeySearchTarget t(hash);
+    _targets.insert(t);
+    setTargetsOnDevice();
+}
+
 void KeyFinder::init()
 {
 	Logger::log(LogLevel::Info, "Initializing " + _device->getDeviceName());
