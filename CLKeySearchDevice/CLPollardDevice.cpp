@@ -63,7 +63,9 @@ void runWalk(PollardEngine &engine,
              const std::vector<unsigned int> &offsets,
              const std::vector<std::array<unsigned int,5>> &targets,
              uint64_t steps,
-             uint64_t seed) {
+             uint64_t seed,
+             const uint256 *start,
+             const ecpoint *startPoint) {
     auto devices = cl::getDevices();
     if(devices.empty()) {
         return;
@@ -94,6 +96,13 @@ void runWalk(PollardEngine &engine,
     cl_mem d_out = clCreateBuffer(ctx.getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardWindowCL) * maxOut, NULL, &err);
     cl_mem d_count = clCreateBuffer(ctx.getContext(), CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &err);
     cl_mem d_seeds = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_ulong) * global, NULL, &err);
+    cl_mem d_starts = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_ulong) * global, NULL, &err);
+    cl_mem d_startX = NULL;
+    cl_mem d_startY = NULL;
+    if(startPoint) {
+        d_startX = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_uint) * global * 8, NULL, &err);
+        d_startY = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(cl_uint) * global * 8, NULL, &err);
+    }
 
     std::vector<TargetWindowCL> windowList;
     for(size_t t = 0; t < targets.size(); ++t) {
@@ -114,26 +123,55 @@ void runWalk(PollardEngine &engine,
     cl_mem d_windows = clCreateBuffer(ctx.getContext(), CL_MEM_READ_ONLY, sizeof(TargetWindowCL) * windowCount, NULL, &err);
 
     std::vector<cl_ulong> h_seeds(global);
+    std::vector<cl_ulong> h_starts(global);
+    uint64_t base = 0ULL;
+    if(start) {
+        base = ((uint64_t)start->v[1] << 32) | start->v[0];
+    }
     for(size_t i = 0; i < global; ++i) {
         h_seeds[i] = seed + i;
+        h_starts[i] = start ? (base + i) : 0ULL;
+    }
+
+    std::vector<cl_uint> h_startX;
+    std::vector<cl_uint> h_startY;
+    if(startPoint) {
+        h_startX.resize(global * 8);
+        h_startY.resize(global * 8);
+        for(size_t i = 0; i < global; ++i) {
+            uint256 idx((uint64_t)i);
+            ecpoint p = addPoints(*startPoint, multiplyPoint(idx, G()));
+            for(int w = 0; w < 8; ++w) {
+                h_startX[i * 8 + w] = p.x.v[w];
+                h_startY[i * 8 + w] = p.y.v[w];
+            }
+        }
     }
 
     cl_command_queue q = ctx.getQueue();
     cl_uint zero = 0;
     clEnqueueWriteBuffer(q, d_seeds, CL_TRUE, 0, sizeof(cl_ulong) * global, h_seeds.data(), 0, NULL, NULL);
+    clEnqueueWriteBuffer(q, d_starts, CL_TRUE, 0, sizeof(cl_ulong) * global, h_starts.data(), 0, NULL, NULL);
     clEnqueueWriteBuffer(q, d_count, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL);
     if(windowCount > 0) {
         clEnqueueWriteBuffer(q, d_windows, CL_TRUE, 0, sizeof(TargetWindowCL) * windowCount, windowList.data(), 0, NULL, NULL);
+    }
+    if(startPoint) {
+        clEnqueueWriteBuffer(q, d_startX, CL_TRUE, 0, sizeof(cl_uint) * global * 8, h_startX.data(), 0, NULL, NULL);
+        clEnqueueWriteBuffer(q, d_startY, CL_TRUE, 0, sizeof(cl_uint) * global * 8, h_startY.data(), 0, NULL, NULL);
     }
 
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_out);
     clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_count);
     clSetKernelArg(kernel, 2, sizeof(cl_uint), &maxOut);
     clSetKernelArg(kernel, 3, sizeof(cl_mem), &d_seeds);
+    clSetKernelArg(kernel, 4, sizeof(cl_mem), &d_starts);
+    clSetKernelArg(kernel, 5, sizeof(cl_mem), &d_startX);
+    clSetKernelArg(kernel, 6, sizeof(cl_mem), &d_startY);
     cl_uint stepsArg = static_cast<cl_uint>(steps);
-    clSetKernelArg(kernel, 4, sizeof(cl_uint), &stepsArg);
-    clSetKernelArg(kernel, 5, sizeof(cl_mem), &d_windows);
-    clSetKernelArg(kernel, 6, sizeof(cl_uint), &windowCount);
+    clSetKernelArg(kernel, 7, sizeof(cl_uint), &stepsArg);
+    clSetKernelArg(kernel, 8, sizeof(cl_mem), &d_windows);
+    clSetKernelArg(kernel, 9, sizeof(cl_uint), &windowCount);
 
     clEnqueueNDRangeKernel(q, kernel, 1, NULL, &global, NULL, 0, NULL, NULL);
 
@@ -160,16 +198,17 @@ void runWalk(PollardEngine &engine,
     clReleaseMemObject(d_count);
     clReleaseMemObject(d_seeds);
     clReleaseMemObject(d_windows);
+    clReleaseMemObject(d_starts);
+    if(d_startX) clReleaseMemObject(d_startX);
+    if(d_startY) clReleaseMemObject(d_startY);
     clReleaseKernel(kernel);
 }
 } // namespace
 
 void CLPollardDevice::startTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
-    (void)start;
-    runWalk(_engine, _windowBits, _offsets, _targets, steps, seed);
+    runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, &start, nullptr);
 }
 
 void CLPollardDevice::startWildWalk(const ecpoint &start, uint64_t steps, uint64_t seed) {
-    (void)start;
-    runWalk(_engine, _windowBits, _offsets, _targets, steps, seed);
+    runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, nullptr, &start);
 }
