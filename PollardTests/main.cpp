@@ -2,6 +2,7 @@
 #include <vector>
 #include <array>
 #include <cstdint>
+#include "AddressUtil.h"
 
 struct RefMatch {
     uint64_t k;
@@ -24,6 +25,11 @@ static inline uint64_t xorshift128plus(RNGState &st)
     x ^= y >> 26;
     st.s1 = x;
     return x + y;
+}
+
+static secp256k1::ecpoint scalarMultiplyBase(uint64_t k) {
+    secp256k1::uint256 scalar(k);
+    return secp256k1::multiplyPoint(scalar, secp256k1::G());
 }
 
 static inline uint64_t next_random_step(RNGState &st)
@@ -76,8 +82,26 @@ bool testDeterministicSeed() {
     return true;
 }
 
+bool testScalarOne() {
+    secp256k1::ecpoint p = scalarMultiplyBase(1ULL);
+    unsigned int digest[5];
+    Hash::hashPublicKeyCompressed(p, digest);
+    const unsigned int expected[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    for(int i = 0; i < 5; ++i) {
+        if(digest[i] != expected[i]) return false;
+    }
+    return true;
+}
+
 int main(){
     int fails=0;
+    if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
