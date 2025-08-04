@@ -515,11 +515,13 @@ __kernel void pollard_walk(__global PollardWindow *out,
             copyBigInt(ty, py);
 
             uint digest[5];
+            uint finalHashBE[5];
             uint finalHash[5];
             hashPublicKeyCompressed(px, py[7], digest);
-            doRMD160FinalRound(digest, finalHash);
+            doRMD160FinalRound(digest, finalHashBE);
+            // Convert to little-endian word order
             for(int j = 0; j < 5; j++) {
-                finalHash[j] = endian(finalHash[j]);
+                finalHash[j] = endian(finalHashBE[4 - j]);
             }
 
             for(uint w = 0; w < windowCount; w++) {
@@ -557,11 +559,13 @@ __kernel void pollard_walk(__global PollardWindow *out,
         scalarMultiplyBase(stride, sx, sy);
         for(uint i = 0; i < steps; i++) {
             uint digest[5];
+            uint finalHashBE[5];
             uint finalHash[5];
             hashPublicKeyCompressed(px, py[7], digest);
-            doRMD160FinalRound(digest, finalHash);
+            doRMD160FinalRound(digest, finalHashBE);
+            // Convert to little-endian word order
             for(int j = 0; j < 5; j++) {
-                finalHash[j] = endian(finalHash[j]);
+                finalHash[j] = endian(finalHashBE[4 - j]);
             }
 
             for(uint w = 0; w < windowCount; w++) {

@@ -370,11 +370,13 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
         }
         if(distinguished) {
             unsigned int digest[5];
+            unsigned int finalHashBE[5];
             unsigned int finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
-            doRMD160FinalRound(digest, finalHash);
+            doRMD160FinalRound(digest, finalHashBE);
+            // Convert to little-endian word order
             for(int j = 0; j < 5; ++j) {
-                finalHash[j] = endian(finalHash[j]);
+                finalHash[j] = endian(finalHashBE[4 - j]);
             }
 
             unsigned int idx = atomicAdd(outCount, 1u);
@@ -445,11 +447,13 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             copyBigInt(ty, py);
 
             uint32_t digest[5];
+            uint32_t finalHashBE[5];
             uint32_t finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
-            doRMD160FinalRound(digest, finalHash);
+            doRMD160FinalRound(digest, finalHashBE);
+            // Convert to little-endian word order
             for(int j = 0; j < 5; ++j) {
-                finalHash[j] = endian(finalHash[j]);
+                finalHash[j] = endian(finalHashBE[4 - j]);
             }
 
             for(uint32_t w = 0; w < windowCount; ++w) {
@@ -479,11 +483,13 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
         scalarMultiplyBase(stride, sx, sy);
         for(uint32_t i = 0; i < steps; ++i) {
             uint32_t digest[5];
+            uint32_t finalHashBE[5];
             uint32_t finalHash[5];
             hashPublicKeyCompressed(px, py[7] & 1, digest);
-            doRMD160FinalRound(digest, finalHash);
+            doRMD160FinalRound(digest, finalHashBE);
+            // Convert to little-endian word order
             for(int j = 0; j < 5; ++j) {
-                finalHash[j] = endian(finalHash[j]);
+                finalHash[j] = endian(finalHashBE[4 - j]);
             }
 
             for(uint32_t w = 0; w < windowCount; ++w) {

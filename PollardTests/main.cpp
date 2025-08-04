@@ -250,6 +250,58 @@ bool testHashWindowK1Windows() {
     return true;
 }
 
+bool testHashWindowOffsets() {
+    const unsigned int be[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    unsigned int le[5];
+    // Convert big-endian digest to little-endian words
+    secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
+    unsigned int offsets[4] = {0,20,40,60};
+
+    const char *cmd =
+        "python3 - <<'PY'\n"
+        "h=bytes.fromhex('751e76e8199196d454941c45d1b3a323f1433bd6')\n"
+        "w=[int.from_bytes(h[::-1][i*4:(i+1)*4],'big') for i in range(5)]\n"
+        "for off in (0,20,40,60):\n"
+        "    word=off//32\n"
+        "    bit=off%32\n"
+        "    val=w[word]>>bit\n"
+        "    if bit and word+1<5:\n"
+        "        val|=w[word+1]<<(32-bit)\n"
+        "    val &= (1<<20)-1\n"
+        "    print(hex(val))\n"
+        "PY";
+    FILE *pipe = popen(cmd, "r");
+    if(!pipe) return false;
+    char buffer[128];
+    std::vector<unsigned int> expected;
+    while(fgets(buffer, sizeof(buffer), pipe)) {
+        std::string line(buffer);
+        while(!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+        if(line.rfind("0x", 0) == 0) line = line.substr(2);
+        unsigned int val = 0;
+        std::stringstream ss;
+        ss << std::hex << line;
+        ss >> val;
+        expected.push_back(val);
+    }
+    pclose(pipe);
+    if(expected.size() != 4) return false;
+    for(int i = 0; i < 4; ++i) {
+        auto got = hashWindowLE(le, offsets[i], 20);
+        if(got[0] != expected[i]) return false;
+        for(int j = 1; j < 5; ++j) {
+            if(got[j] != 0u) return false;
+        }
+    }
+    return true;
+}
+
 class StubDevice : public PollardDevice {
     PollardMatch _m;
     bool _sent = false;
@@ -382,6 +434,7 @@ int main(){
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
     if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
+    if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
