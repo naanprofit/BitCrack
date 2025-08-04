@@ -99,26 +99,26 @@ static inline unsigned int bswap32(unsigned int x) {
            ((x >> 8) & 0x0000ff00U) | (x >> 24);
 }
 
-static secp256k1::uint256 hashWindowLE(const unsigned int h[5], unsigned int offset,
-                                       unsigned int bits) {
-    secp256k1::uint256 out(0);
+static std::array<unsigned int,5> hashWindowLE(const unsigned int h[5], unsigned int offset,
+                                               unsigned int bits) {
+    std::array<unsigned int,5> out{};
     unsigned int word = offset / 32;
-    unsigned int bit = offset % 32;
-    unsigned int span = bit + bits;
-    unsigned int words = (span + 31) / 32;
+    unsigned int bit  = offset % 32;
+    unsigned int words = (bits + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
             val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
         }
-        out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
+        out[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
-    if(span % 32) {
-        unsigned int mask = (1u << (span % 32)) - 1u;
-        out.v[words - 1] &= mask;
+    unsigned int maskBits = bits % 32;
+    if(maskBits) {
+        unsigned int mask = (1u << maskBits) - 1u;
+        out[words - 1] &= mask;
     }
-    for(unsigned int i = words; i < 8; ++i) {
-        out.v[i] = 0u;
+    for(unsigned int i = words; i < 5; ++i) {
+        out[i] = 0u;
     }
     return out;
 }
@@ -172,7 +172,7 @@ bool testHashWindowLEPython() {
     for(int i = 0; i < 5; ++i) {
         le[i] = bswap32(be[4 - i]);
     }
-    secp256k1::uint256 got = hashWindowLE(le, 0, 160);
+    auto got = hashWindowLE(le, 0, 160);
 
     const char *cmd =
         "python3 - <<'PY'\n"
@@ -200,8 +200,7 @@ bool testHashWindowLEPython() {
         ss >> w;
         arr[i] = bswap32(w);
     }
-    secp256k1::uint256 expected;
-    for(int i = 0; i < 5; ++i) expected.v[i] = arr[i];
+    std::array<unsigned int,5> expected = arr;
     return got == expected;
 }
 
@@ -213,10 +212,11 @@ bool testHashWindowLEK1() {
         0xd1b3a323u,
         0xf1433bd6u
     };
-    secp256k1::uint256 expected = secp256k1::uint256::importBigEndian(be, 5);
     unsigned int le[5];
-    expected.exportWords(le, 5);
-    secp256k1::uint256 got = hashWindowLE(le, 0, 160);
+    secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
+    auto got = hashWindowLE(le, 0, 160);
+    std::array<unsigned int,5> expected;
+    for(int i = 0; i < 5; ++i) expected[i] = le[i];
     return got == expected;
 }
 
@@ -234,20 +234,23 @@ bool testHashWindowK1Windows() {
     struct Case { unsigned int off; unsigned int bits; std::vector<unsigned int> words; };
     std::vector<Case> cases = {
         {0, 80,  {0xd63b43f1u, 0x23a3b3d1u, 0x00009454u}},
-        {40, 80, {0x5423a3b3u, 0x19451c94u, 0x00d49691u}},
+        {40, 80, {0x5423a3b3u, 0x19451c94u, 0x00009691u}},
         {80, 80, {0x9119451cu, 0x1e75d496u, 0x0000e876u}},
         {0, 96,  {0xd63b43f1u, 0x23a3b3d1u, 0x451c9454u}},
         {32, 96, {0x23a3b3d1u, 0x451c9454u, 0xd4969119u}},
-        {64, 96, {0x451c9454u, 0xd4969119u, 0xe8761e75u}}
+        {64, 96, {0x451c9454u, 0xd4969119u, 0xe8761e75u}},
+        {64, 32, {0x451c9454u}},
+        {76, 19, {0x000451c9u}},
+        {84, 19, {0x00019451u}}
     };
     for(const auto &c : cases) {
-        secp256k1::uint256 got = hashWindowLE(le, c.off, c.bits);
+        auto got = hashWindowLE(le, c.off, c.bits);
         unsigned int words = (c.bits + 31) / 32;
         for(unsigned int i = 0; i < words; ++i) {
-            if(got.v[i] != c.words[i]) return false;
+            if(got[i] != c.words[i]) return false;
         }
-        for(unsigned int i = words; i < 8; ++i) {
-            if(got.v[i] != 0u) return false;
+        for(unsigned int i = words; i < 5; ++i) {
+            if(got[i] != 0u) return false;
         }
     }
     return true;
