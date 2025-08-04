@@ -238,16 +238,15 @@ __device__ static void pointAdd(const unsigned int ax[8], const unsigned int ay[
     subModP(ry, ay, ry);
 }
 
-// Multiply the secp256k1 base point by a 256-bit scalar ``k`` (little endian)
-__device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int rx[8], unsigned int ry[8])
+__device__ static void scalarMultiplySmall(const unsigned int bx[8], const unsigned int by[8],
+                                           const unsigned int k[8], unsigned int rx[8], unsigned int ry[8])
 {
     setPointInfinity(rx, ry);
     unsigned int qx[8];
     unsigned int qy[8];
-    copyBigInt(_GX, qx);
-    copyBigInt(_GY, qy);
-
-    for(int i = 0; i < 8; ++i) {
+    copyBigInt(bx, qx);
+    copyBigInt(by, qy);
+    for(int i = 0; i < 4; ++i) {
         unsigned int word = k[i];
         for(int bit = 0; bit < 32; ++bit) {
             if(word & 1U) {
@@ -265,6 +264,43 @@ __device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int 
             copyBigInt(ty, qy);
         }
     }
+}
+
+// Multiply the secp256k1 base point by a 256-bit scalar ``k`` (little endian)
+__device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int rx[8], unsigned int ry[8])
+{
+    GLVScalarSplit split;
+    splitScalar(k, split);
+
+    unsigned int r1x[8];
+    unsigned int r1y[8];
+    scalarMultiplySmall(_GX, _GY, split.k1, r1x, r1y);
+    if(split.k1Neg) {
+        unsigned int ny[8];
+        negModP(r1y, ny);
+        copyBigInt(ny, r1y);
+    }
+
+    if(isZero256(split.k2)) {
+        copyBigInt(r1x, rx);
+        copyBigInt(r1y, ry);
+        return;
+    }
+
+    unsigned int base2x[8];
+    unsigned int base2y[8];
+    mulModP(_GX, _BETA, base2x);
+    copyBigInt(_GY, base2y);
+    unsigned int r2x[8];
+    unsigned int r2y[8];
+    scalarMultiplySmall(base2x, base2y, split.k2, r2x, r2y);
+    if(split.k2Neg) {
+        unsigned int ny[8];
+        negModP(r2y, ny);
+        copyBigInt(ny, r2y);
+    }
+
+    pointAdd(r1x, r1y, r2x, r2y, rx, ry);
 }
 
 // Legacy kernel retained for backwards compatibility. It performs a

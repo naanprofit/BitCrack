@@ -43,7 +43,26 @@ __constant__ static unsigned int _BETA[8] = {
 
 
 __constant__ static unsigned int _LAMBDA[8] = {
-	0x5363AD4C, 0xC05C30E0, 0xA5261C02, 0x8812645A, 0x122E22EA, 0x20816678, 0xDF02967C, 0x1B23BD72
+        0x5363AD4C, 0xC05C30E0, 0xA5261C02, 0x8812645A, 0x122E22EA, 0x20816678, 0xDF02967C, 0x1B23BD72
+};
+
+__constant__ static unsigned int _A1[8] = {
+        2458184469U, 3899429092U, 2815716301U, 814141985U, 0U, 0U, 0U, 0U
+};
+__constant__ static unsigned int _B1[8] = {
+        180348099U, 1867808681U, 17729576U, 3829628630U, 0U, 0U, 0U, 0U
+};
+__constant__ static unsigned int _A2[8] = {
+        2638532568U, 1472270477U, 2833445878U, 348803319U, 1U, 0U, 0U, 0U
+};
+__constant__ static unsigned int _B2[8] = {
+        2458184469U, 3899429092U, 2815716301U, 814141985U, 0U, 0U, 0U, 0U
+};
+__constant__ static unsigned int _G1[5] = {
+        3944037802U, 2430898820U, 1808656492U, 3525421012U, 12422U
+};
+__constant__ static unsigned int _G2[5] = {
+        3838059026U, 2141784767U, 2284351316U, 2127954190U, 58435U
 };
 
 
@@ -69,13 +88,124 @@ __device__ __forceinline__ static void copyBigInt(const unsigned int src[8], uns
 
 __device__ static bool equal(const unsigned int *a, const unsigned int *b)
 {
-	bool eq = true;
+        bool eq = true;
 
 	for(int i = 0; i < 8; i++) {
 		eq &= (a[i] == b[i]);
 	}
 
-	return eq;
+        return eq;
+}
+
+__device__ static void glvMulWords(const unsigned int *x, int xLen,
+                                   const unsigned int *y, int yLen,
+                                   unsigned int *z)
+{
+        for(int i = 0; i < xLen + yLen; ++i) z[i] = 0U;
+        for(int i = 0; i < xLen; ++i) {
+                unsigned int carry = 0U;
+                for(int j = 0; j < yLen; ++j) {
+                        unsigned long long p = (unsigned long long)x[i] * (unsigned long long)y[j] + z[i+j] + carry;
+                        z[i+j] = (unsigned int)p;
+                        carry = (unsigned int)(p >> 32);
+                }
+                z[i + yLen] = carry;
+        }
+}
+
+__device__ static int glvCmp(const unsigned int *a, const unsigned int *b, int len)
+{
+        for(int i = len - 1; i >= 0; --i) {
+                if(a[i] > b[i]) return 1;
+                if(a[i] < b[i]) return -1;
+        }
+        return 0;
+}
+
+__device__ static void glvAdd(const unsigned int *a, const unsigned int *b, int len, unsigned int *r)
+{
+        unsigned int carry = 0U;
+        for(int i = 0; i < len; ++i) {
+                unsigned int ai = a[i];
+                unsigned int bi = b[i];
+                unsigned int s = ai + bi;
+                unsigned int ri = s + carry;
+                carry = (s < ai) | (ri < s);
+                r[i] = ri;
+        }
+}
+
+__device__ static void glvSub(const unsigned int *a, const unsigned int *b, int len, unsigned int *r)
+{
+        unsigned int borrow = 0U;
+        for(int i = 0; i < len; ++i) {
+                unsigned int ai = a[i];
+                unsigned int bi = b[i];
+                unsigned int t = ai - bi;
+                unsigned int ri = t - borrow;
+                borrow = (ai < bi) | (t < borrow);
+                r[i] = ri;
+        }
+}
+
+struct GLVScalarSplit {
+        unsigned int k1[8];
+        unsigned int k2[8];
+        bool k1Neg;
+        bool k2Neg;
+};
+
+__device__ static void splitScalar(const unsigned int k[8], GLVScalarSplit &r)
+{
+        unsigned int prod1[13];
+        glvMulWords(k, 8, _G1, 5, prod1);
+        unsigned int c1[8] = {0};
+        for(int i = 0; i < 5; ++i) {
+                unsigned int lo = (i + 8 < 13) ? prod1[i + 8] : 0U;
+                unsigned int hi = (i + 9 < 13) ? prod1[i + 9] : 0U;
+                c1[i] = (lo >> 16) | (hi << 16);
+        }
+
+        unsigned int prod2[13];
+        glvMulWords(k, 8, _G2, 5, prod2);
+        unsigned int c2[8] = {0};
+        for(int i = 0; i < 5; ++i) {
+                unsigned int lo = (i + 8 < 13) ? prod2[i + 8] : 0U;
+                unsigned int hi = (i + 9 < 13) ? prod2[i + 9] : 0U;
+                c2[i] = (lo >> 16) | (hi << 16);
+        }
+
+        unsigned int t1[16];
+        unsigned int t2[16];
+        glvMulWords(c1, 8, _A1, 8, t1);
+        glvMulWords(c2, 8, _A2, 8, t2);
+        unsigned int sum[16];
+        glvAdd(t1, t2, 16, sum);
+        unsigned int kExt[16];
+        for(int i = 0; i < 8; ++i) kExt[i] = k[i];
+        for(int i = 8; i < 16; ++i) kExt[i] = 0U;
+
+        if(glvCmp(kExt, sum, 16) >= 0) {
+                glvSub(kExt, sum, 16, t1);
+                for(int i = 0; i < 8; ++i) r.k1[i] = t1[i];
+                r.k1Neg = false;
+        } else {
+                glvSub(sum, kExt, 16, t1);
+                for(int i = 0; i < 8; ++i) r.k1[i] = t1[i];
+                r.k1Neg = true;
+        }
+
+        glvMulWords(c1, 8, _B1, 8, t1);
+        glvMulWords(c2, 8, _B2, 8, t2);
+        if(glvCmp(t1, t2, 16) >= 0) {
+                glvSub(t1, t2, 16, sum);
+                for(int i = 0; i < 8; ++i) r.k2[i] = sum[i];
+                r.k2Neg = false;
+        } else {
+                glvSub(t2, t1, 16, sum);
+                for(int i = 0; i < 8; ++i) r.k2[i] = sum[i];
+                r.k2Neg = true;
+        }
 }
 
 /**

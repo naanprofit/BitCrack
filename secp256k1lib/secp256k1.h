@@ -347,14 +347,117 @@ namespace secp256k1 {
 	const uint256 P(_P_WORDS);
 	const uint256 N(_N_WORDS);
 
-	const uint256 BETA(_BETA_WORDS);
-	const uint256 LAMBDA(_LAMBDA_WORDS);
+        const uint256 BETA(_BETA_WORDS);
+        const uint256 LAMBDA(_LAMBDA_WORDS);
 
-	ecpoint pointAtInfinity();
-	ecpoint G();
+        ecpoint pointAtInfinity();
+        ecpoint G();
+        uint256 multiplyModP(const uint256 &a, const uint256&b);
 
+        struct GLVSplit {
+            uint256 k1;
+            uint256 k2;
+            bool k1Neg;
+            bool k2Neg;
+            GLVSplit() : k1(0), k2(0), k1Neg(false), k2Neg(false) {}
+        };
 
-	uint256 negModP(const uint256 &x);
+        inline ecpoint glvEndomorphismBasePoint()
+        {
+            uint256 x = multiplyModP(G().x, BETA);
+            return ecpoint(x, G().y);
+        }
+
+        inline GLVSplit splitScalar(const uint256 &k)
+        {
+            static const unsigned int A1_WORDS[8] = {
+                2458184469u, 3899429092u, 2815716301u, 814141985u,
+                0u, 0u, 0u, 0u
+            };
+            static const unsigned int B1_WORDS[8] = {
+                180348099u, 1867808681u, 17729576u, 3829628630u,
+                0u, 0u, 0u, 0u
+            };
+            static const unsigned int A2_WORDS[8] = {
+                2638532568u, 1472270477u, 2833445878u, 348803319u,
+                1u, 0u, 0u, 0u
+            };
+            static const unsigned int B2_WORDS[8] = {
+                2458184469u, 3899429092u, 2815716301u, 814141985u,
+                0u, 0u, 0u, 0u
+            };
+            static const unsigned int G1_WORDS[5] = {
+                3944037802u, 2430898820u, 1808656492u, 3525421012u, 12422u
+            };
+            static const unsigned int G2_WORDS[5] = {
+                3838059026u, 2141784767u, 2284351316u, 2127954190u, 58435u
+            };
+
+            auto mulWords = [](const unsigned int *x, int xLen,
+                                const unsigned int *y, int yLen,
+                                unsigned int *z) {
+                for(int i = 0; i < xLen + yLen; ++i) z[i] = 0u;
+                for(int i = 0; i < xLen; ++i) {
+                    unsigned int carry = 0u;
+                    for(int j = 0; j < yLen; ++j) {
+                        uint64_t p = (uint64_t)x[i] * (uint64_t)y[j] + z[i+j] + carry;
+                        z[i+j] = (unsigned int)p;
+                        carry = (unsigned int)(p >> 32);
+                    }
+                    z[i + yLen] = carry;
+                }
+            };
+
+            unsigned int kWords[8];
+            k.exportWords(kWords, 8, uint256::LittleEndian);
+
+            unsigned int prod1[13];
+            mulWords(kWords, 8, G1_WORDS, 5, prod1);
+            unsigned int c1Words[8] = {0};
+            for(int i = 0; i < 5; ++i) {
+                unsigned int lo = (i + 8 < 13) ? prod1[i + 8] : 0u;
+                unsigned int hi = (i + 9 < 13) ? prod1[i + 9] : 0u;
+                c1Words[i] = (lo >> 16) | (hi << 16);
+            }
+            uint256 c1(c1Words);
+
+            unsigned int prod2[13];
+            mulWords(kWords, 8, G2_WORDS, 5, prod2);
+            unsigned int c2Words[8] = {0};
+            for(int i = 0; i < 5; ++i) {
+                unsigned int lo = (i + 8 < 13) ? prod2[i + 8] : 0u;
+                unsigned int hi = (i + 9 < 13) ? prod2[i + 9] : 0u;
+                c2Words[i] = (lo >> 16) | (hi << 16);
+            }
+            uint256 c2(c2Words);
+
+            uint256 t1 = c1.mul(uint256(A1_WORDS));
+            uint256 t2 = c2.mul(uint256(A2_WORDS));
+            uint256 sum = t1.add(t2);
+
+            GLVSplit r;
+            if(k.cmp(sum) >= 0) {
+                r.k1 = k.sub(sum);
+                r.k1Neg = false;
+            } else {
+                r.k1 = sum.sub(k);
+                r.k1Neg = true;
+            }
+
+            uint256 u1 = c1.mul(uint256(B1_WORDS));
+            uint256 u2 = c2.mul(uint256(B2_WORDS));
+            if(u1.cmp(u2) >= 0) {
+                r.k2 = u1.sub(u2);
+                r.k2Neg = false;
+            } else {
+                r.k2 = u2.sub(u1);
+                r.k2Neg = true;
+            }
+
+            return r;
+        }
+
+        uint256 negModP(const uint256 &x);
 	uint256 negModN(const uint256 &x);
 
 	uint256 addModP(const uint256 &a, const uint256 &b);
