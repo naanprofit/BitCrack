@@ -53,6 +53,69 @@ __device__ static inline unsigned long long next_random_step(RNGState &state)
     return (xorshift128plus(state) % ORDER_MINUS_ONE) + 1ULL;
 }
 
+// Full secp256k1 group order expressed in little-endian words for scalar
+// arithmetic.  Scalars within this file are represented in little-endian
+// form where index 0 holds the least significant 32 bits.
+static __device__ __constant__ unsigned int ORDER[8] = {
+    0xD0364141U, 0xBFD25E8CU, 0xAF48A03BU, 0xBAAEDCE6U,
+    0xFFFFFFFEU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
+};
+
+__device__ static inline bool isZero256(const unsigned int a[8]) {
+    for(int i = 0; i < 8; ++i) {
+        if(a[i] != 0U) return false;
+    }
+    return true;
+}
+
+__device__ static inline bool ge256(const unsigned int a[8], const unsigned int b[8]) {
+    for(int i = 7; i >= 0; --i) {
+        if(a[i] > b[i]) return true;
+        if(a[i] < b[i]) return false;
+    }
+    return true; // equal
+}
+
+__device__ static inline void sub256(const unsigned int a[8], const unsigned int b[8], unsigned int r[8]) {
+    unsigned long long borrow = 0ULL;
+    for(int i = 0; i < 8; ++i) {
+        unsigned long long diff = (unsigned long long)a[i] - b[i] - borrow;
+        r[i] = (unsigned int)diff;
+        borrow = (diff >> 63) & 1ULL;
+    }
+}
+
+__device__ static inline void addModN(const unsigned int a[8], const unsigned int b[8], unsigned int r[8]) {
+    unsigned long long carry = 0ULL;
+    for(int i = 0; i < 8; ++i) {
+        unsigned long long sum = (unsigned long long)a[i] + b[i] + carry;
+        r[i] = (unsigned int)sum;
+        carry = sum >> 32;
+    }
+    if(carry || ge256(r, ORDER)) {
+        sub256(r, ORDER, r);
+    }
+}
+
+__device__ static inline void addModNU64(unsigned int a[8], unsigned long long b) {
+    unsigned int t[8];
+    t[0] = (unsigned int)b;
+    t[1] = (unsigned int)(b >> 32);
+    for(int i = 2; i < 8; ++i) t[i] = 0U;
+    addModN(a, t, a);
+}
+
+// Generate a random step in the range [1, ORDER-1]
+__device__ static inline void next_random_step(RNGState &state, unsigned int step[8]) {
+    do {
+        for(int i = 0; i < 4; ++i) {
+            unsigned long long v = xorshift128plus(state);
+            step[i * 2]     = (unsigned int)(v & 0xffffffffULL);
+            step[i * 2 + 1] = (unsigned int)(v >> 32);
+        }
+    } while(isZero256(step) || ge256(step, ORDER));
+}
+
 static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
     const unsigned int iv[5] = {
@@ -173,7 +236,7 @@ __device__ static void pointAdd(const unsigned int ax[8], const unsigned int ay[
     subModP(ry, ay, ry);
 }
 
-__device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[8], unsigned int ry[8])
+__device__ static void scalarMultiplyBase64(unsigned long long k, unsigned int rx[8], unsigned int ry[8])
 {
     setPointInfinity(rx, ry);
     if(k == 0ULL) {
@@ -195,6 +258,35 @@ __device__ static void scalarMultiplyBase(unsigned long long k, unsigned int rx[
         }
         k >>= 1ULL;
         if(k) {
+            unsigned int tx[8];
+            unsigned int ty[8];
+            pointDouble(qx, qy, tx, ty);
+            copyBigInt(tx, qx);
+            copyBigInt(ty, qy);
+        }
+    }
+}
+
+// Multiply the secp256k1 base point by a 256-bit scalar ``k`` (little endian)
+__device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int rx[8], unsigned int ry[8])
+{
+    setPointInfinity(rx, ry);
+    unsigned int qx[8];
+    unsigned int qy[8];
+    copyBigInt(_GX, qx);
+    copyBigInt(_GY, qy);
+
+    for(int i = 0; i < 8; ++i) {
+        unsigned int word = k[i];
+        for(int bit = 0; bit < 32; ++bit) {
+            if(word & 1U) {
+                unsigned int tx[8];
+                unsigned int ty[8];
+                pointAdd(rx, ry, qx, qy, tx, ty);
+                copyBigInt(tx, rx);
+                copyBigInt(ty, ry);
+            }
+            word >>= 1U;
             unsigned int tx[8];
             unsigned int ty[8];
             pointDouble(qx, qy, tx, ty);
@@ -230,7 +322,7 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
             py[i] = startY[tid * 8 + i];
         }
     } else {
-        scalarMultiplyBase(scalar, px, py);
+        scalarMultiplyBase64(scalar, px, py);
     }
 
     RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
@@ -243,7 +335,7 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
 
         unsigned int sx[8];
         unsigned int sy[8];
-        scalarMultiplyBase(step, sx, sy);
+        scalarMultiplyBase64(step, sx, sy);
         unsigned int tx[8];
         unsigned int ty[8];
         pointAdd(px, py, sx, sy, tx, ty);
@@ -253,8 +345,8 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
         if((scalar & mask) == 0ULL) {
             unsigned int digest[5];
             unsigned int finalHash[5];
-            // py[0] holds the least significant word; py[0] & 1 yields the parity bit
-            hashPublicKeyCompressed(px, py[0] & 1, digest);
+            // py[7] holds the least significant word; py[7] & 1 yields the parity bit
+            hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
 
             unsigned int idx = atomicAdd(outCount, 1u);
@@ -274,8 +366,8 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
 extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        unsigned int *outCount,
                                        unsigned int maxOut,
-                                       const unsigned long long *seeds,
-                                       const unsigned long long *starts,
+                                       const unsigned int *seeds,
+                                       const unsigned int *starts,
                                        const unsigned int *startX,
                                        const unsigned int *startY,
                                        unsigned int steps,
@@ -284,8 +376,10 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        unsigned long long stride)
 {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned long long scalar = starts[tid];
-    const unsigned long long ORDER = 0xBFD25E8CD0364141ULL;
+    unsigned int scalar[8];
+    for(int i = 0; i < 8; ++i) {
+        scalar[i] = starts[tid * 8 + i];
+    }
     unsigned int px[8];
     unsigned int py[8];
 
@@ -299,11 +393,13 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
     }
 
     if(stride == 0ULL) {
-        RNGState rng{ seeds[tid] ^ 1ULL, seeds[tid] + 1ULL };
+        unsigned long long s0 = ((unsigned long long)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
+        unsigned long long s1 = ((unsigned long long)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
+        RNGState rng{ s0 ^ 1ULL, s1 + 1ULL };
         for(unsigned int i = 0; i < steps; ++i) {
-            unsigned long long step = next_random_step(rng);
-            scalar += step;
-            scalar %= ORDER;
+            unsigned int step[8];
+            next_random_step(rng, step);
+            addModN(scalar, step, scalar);
 
             unsigned int sx[8];
             unsigned int sy[8];
@@ -316,8 +412,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
 
             unsigned int digest[5];
             unsigned int finalHash[5];
-            // py[0] holds the least significant word; py[0] & 1 yields the parity bit
-            hashPublicKeyCompressed(px, py[0] & 1, digest);
+            hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
 
             for(unsigned int w = 0; w < windowCount; ++w) {
@@ -330,11 +425,14 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                         out[idx].offset    = tw.offset;
                         out[idx].bits      = tw.bits;
                         unsigned int modBits = tw.offset + tw.bits;
-                        unsigned long long mask = (modBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << modBits) - 1ULL);
-                        unsigned long long frag = scalar & mask;
-                        out[idx].k[0] = (unsigned int)(frag & 0xffffffffULL);
-                        out[idx].k[1] = (unsigned int)(frag >> 32);
-                        for(int j = 2; j < 8; ++j) {
+                        unsigned int words = (modBits + 31) / 32;
+                        for(unsigned int j = 0; j < words; ++j) {
+                            out[idx].k[j] = scalar[j];
+                        }
+                        if(modBits % 32) {
+                            out[idx].k[words - 1] &= ((1U << (modBits % 32)) - 1U);
+                        }
+                        for(unsigned int j = words; j < 8; ++j) {
                             out[idx].k[j] = 0U;
                         }
                     }
@@ -342,14 +440,14 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             }
         }
     } else {
+        unsigned int strideArr[8] = { (unsigned int)stride, (unsigned int)(stride >> 32), 0,0,0,0,0,0 };
         unsigned int sx[8];
         unsigned int sy[8];
-        scalarMultiplyBase(stride, sx, sy);
+        scalarMultiplyBase(strideArr, sx, sy);
         for(unsigned int i = 0; i < steps; ++i) {
             unsigned int digest[5];
             unsigned int finalHash[5];
-            // py[0] holds the least significant word; py[0] & 1 yields the parity bit
-            hashPublicKeyCompressed(px, py[0] & 1, digest);
+            hashPublicKeyCompressed(px, py[7] & 1, digest);
             doRMD160FinalRound(digest, finalHash);
 
             for(unsigned int w = 0; w < windowCount; ++w) {
@@ -362,19 +460,21 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                         out[idx].offset    = tw.offset;
                         out[idx].bits      = tw.bits;
                         unsigned int modBits = tw.offset + tw.bits;
-                        unsigned long long mask = (modBits >= 64) ? 0xffffffffffffffffULL : ((1ULL << modBits) - 1ULL);
-                        unsigned long long frag = scalar & mask;
-                        out[idx].k[0] = (unsigned int)(frag & 0xffffffffULL);
-                        out[idx].k[1] = (unsigned int)(frag >> 32);
-                        for(int j = 2; j < 8; ++j) {
+                        unsigned int words = (modBits + 31) / 32;
+                        for(unsigned int j = 0; j < words; ++j) {
+                            out[idx].k[j] = scalar[j];
+                        }
+                        if(modBits % 32) {
+                            out[idx].k[words - 1] &= ((1U << (modBits % 32)) - 1U);
+                        }
+                        for(unsigned int j = words; j < 8; ++j) {
                             out[idx].k[j] = 0U;
                         }
                     }
                 }
             }
 
-            scalar += stride;
-            scalar %= ORDER;
+            addModNU64(scalar, stride);
             unsigned int tx[8];
             unsigned int ty[8];
             pointAdd(px, py, sx, sy, tx, ty);

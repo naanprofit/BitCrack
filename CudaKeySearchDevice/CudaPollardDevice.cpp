@@ -46,8 +46,8 @@ static uint64_t hashWindowLE(const unsigned int h[5], unsigned int offset, unsig
 extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        unsigned int *outCount,
                                        unsigned int maxOut,
-                                       const unsigned long long *seeds,
-                                       const unsigned long long *starts,
+                                       const unsigned int *seeds,
+                                       const unsigned int *starts,
                                        const unsigned int *startX,
                                        const unsigned int *startY,
                                        unsigned int steps,
@@ -78,20 +78,21 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     unsigned int totalThreads = threadsPerBlock * blocks;
 
     // Build per-thread seeds and starting scalars using the ``start`` value
-    std::vector<unsigned long long> h_seeds(totalThreads);
-    std::vector<unsigned long long> h_starts(totalThreads);
-    uint64_t base = ((uint64_t)start.v[1] << 32) | start.v[0];
+    std::vector<unsigned int> h_seeds(totalThreads * 8);
+    std::vector<unsigned int> h_starts(totalThreads * 8);
     for(unsigned int i = 0; i < totalThreads; ++i) {
-        h_seeds[i]  = seed + i;
-        h_starts[i] = base + i;
+        uint256 sSeed(seed + i);
+        sSeed.exportWords(&h_seeds[i*8], 8);
+        uint256 sStart = addModN(start, uint256(i));
+        sStart.exportWords(&h_starts[i*8], 8);
     }
 
-    unsigned long long *d_seeds = nullptr;
-    unsigned long long *d_starts = nullptr;
-    cudaMalloc(&d_seeds, sizeof(unsigned long long) * totalThreads);
-    cudaMalloc(&d_starts, sizeof(unsigned long long) * totalThreads);
-    cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned long long) * totalThreads, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned long long) * totalThreads, cudaMemcpyHostToDevice);
+    unsigned int *d_seeds = nullptr;
+    unsigned int *d_starts = nullptr;
+    cudaMalloc(&d_seeds, sizeof(unsigned int) * totalThreads * 8);
+    cudaMalloc(&d_starts, sizeof(unsigned int) * totalThreads * 8);
+    cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
 
     // Prepare target windows
     std::vector<GpuTargetWindow> h_windows;
@@ -170,24 +171,29 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     unsigned int blocks = prop.multiProcessorCount;
     unsigned int totalThreads = threadsPerBlock * blocks;
 
-    std::vector<unsigned long long> h_seeds(totalThreads);
-    std::vector<unsigned long long> h_starts(totalThreads);
+    std::vector<unsigned int> h_seeds(totalThreads * 8);
+    std::vector<unsigned int> h_starts(totalThreads * 8);
     std::vector<unsigned int> h_startX(totalThreads * 8);
     std::vector<unsigned int> h_startY(totalThreads * 8);
 
-    uint64_t base = ((uint64_t)start.v[1] << 32) | start.v[0];
+    uint256 base = start;
     unsigned long long stride = sequential ? static_cast<unsigned long long>(totalThreads) : 0ULL;
-    uint64_t startBase = sequential ? (base - (steps - 1) * stride) : base;
+    uint256 strideVal(stride);
+    uint256 startBase = base;
+    if(sequential) {
+        uint256 offset = multiplyModN(strideVal, uint256(steps - 1));
+        startBase = subModN(base, offset);
+    }
     ecpoint startPoint = multiplyPoint(start, G());
 
     for(unsigned int i = 0; i < totalThreads; ++i) {
-        h_seeds[i] = seed + i;
-        uint64_t s = sequential ? (startBase - i) : 0ULL;
-        h_starts[i] = s;
+        uint256 sSeed(seed + i);
+        sSeed.exportWords(&h_seeds[i*8], 8);
+        uint256 s = sequential ? subModN(startBase, uint256(i)) : uint256(0);
+        s.exportWords(&h_starts[i*8], 8);
         ecpoint p;
         if(sequential) {
-            uint256 k(s);
-            p = multiplyPoint(k, G());
+            p = multiplyPoint(s, G());
         } else {
             uint256 idx(i);
             p = addPoints(startPoint, multiplyPoint(idx, G()));
@@ -198,16 +204,16 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         }
     }
 
-    unsigned long long *d_seeds = nullptr;
-    unsigned long long *d_starts = nullptr;
+    unsigned int *d_seeds = nullptr;
+    unsigned int *d_starts = nullptr;
     unsigned int *d_startX = nullptr;
     unsigned int *d_startY = nullptr;
-    cudaMalloc(&d_seeds, sizeof(unsigned long long) * totalThreads);
-    cudaMalloc(&d_starts, sizeof(unsigned long long) * totalThreads);
+    cudaMalloc(&d_seeds, sizeof(unsigned int) * totalThreads * 8);
+    cudaMalloc(&d_starts, sizeof(unsigned int) * totalThreads * 8);
     cudaMalloc(&d_startX, sizeof(unsigned int) * totalThreads * 8);
     cudaMalloc(&d_startY, sizeof(unsigned int) * totalThreads * 8);
-    cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned long long) * totalThreads, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned long long) * totalThreads, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_seeds, h_seeds.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_starts, h_starts.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_startX, h_startX.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_startY, h_startY.data(), sizeof(unsigned int) * totalThreads * 8, cudaMemcpyHostToDevice);
 
