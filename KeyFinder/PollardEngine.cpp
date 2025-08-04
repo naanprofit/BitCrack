@@ -72,7 +72,8 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
         return;
     }
 
-    std::mt19937_64 rng(seed.toUint64());
+    uint256 seedCopy = seed;
+    std::mt19937_64 rng(seedCopy.toUint64());
     uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
     std::uniform_int_distribution<uint64_t> dist(1, maxStep);
     for(uint64_t i = 0; i < steps; ++i) {
@@ -121,7 +122,8 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         return;
     }
 
-    std::mt19937_64 rng(seed.toUint64());
+    uint256 seedCopy = seed;
+    std::mt19937_64 rng(seedCopy.toUint64());
     uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
     std::uniform_int_distribution<uint64_t> dist(1, maxStep);
 
@@ -180,7 +182,8 @@ uint256 hashWindowLE(const unsigned int h[5], unsigned int offset,
     uint256 out(0);
     unsigned int word = offset / 32;
     unsigned int bit = offset % 32;
-    unsigned int words = (bits + 31) / 32;
+    unsigned int span = bit + bits;
+    unsigned int words = (span + 31) / 32;
     // Extract required words with cross-boundary handling
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -190,8 +193,8 @@ uint256 hashWindowLE(const unsigned int h[5], unsigned int offset,
         out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
     // Mask off any excess bits in the most significant word
-    if(bits % 32) {
-        unsigned int mask = (1u << (bits % 32)) - 1u;
+    if(span % 32) {
+        unsigned int mask = (1u << (span % 32)) - 1u;
         out.v[words - 1] &= mask;
     }
     // Ensure higher words are zero
