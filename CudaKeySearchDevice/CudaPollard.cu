@@ -124,35 +124,39 @@ static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn
     }
 }
 
-// Extract ``bits`` bits starting at ``offset`` from the RIPEMD160 digest
-// ``h``.  Bits are interpreted in little-endian order and returned in the
-// lower bits of the 160-bit structure.
+// Extract ``bits`` bits starting at ``offset`` from the 160-bit RIPEMD160
+// digest ``h``.  Bits are interpreted in little-endian order and returned in
+// the lower bits of a five word structure.  Each word holds 32 bits giving a
+// full capacity of 160 bits.
 struct Hash160 {
-    unsigned int v[5];
+    uint32_t v[5];
 };
 
-__device__ Hash160 hashWindow(const unsigned int h[5], unsigned int offset, unsigned int bits)
+// Return ``bits`` bits of ``h`` starting at ``offset`` as a little-endian
+// 160-bit value.  Any combination of offset and size that stays within 160
+// bits is supported.
+__device__ Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bits)
 {
     Hash160 out;
     for(int i = 0; i < 5; ++i) {
         out.v[i] = 0u;
     }
-    unsigned int word = offset / 32;
-    unsigned int bit  = offset % 32;
-    unsigned int span = bit + bits;
-    unsigned int words = (span + 31) / 32;
-    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
-        unsigned long long val = ((unsigned long long)h[word + i]) >> bit;
+    uint32_t word  = offset / 32;
+    uint32_t bit   = offset % 32;
+    uint32_t span  = bit + bits;
+    uint32_t words = (span + 31) / 32;
+    for(uint32_t i = 0; i < words && word + i < 5; ++i) {
+        uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
-            val |= ((unsigned long long)h[word + i + 1]) << (32 - bit);
+            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
         }
-        out.v[i] = (unsigned int)(val & 0xffffffffULL);
+        out.v[i] = (uint32_t)(val & 0xffffffffULL);
     }
     if(span % 32) {
-        unsigned int mask = (1u << (span % 32)) - 1u;
+        uint32_t mask = (1u << (span % 32)) - 1u;
         out.v[words - 1] &= mask;
     }
-    for(unsigned int i = words; i < 5; ++i) {
+    for(uint32_t i = words; i < 5; ++i) {
         out.v[i] = 0u;
     }
     return out;
