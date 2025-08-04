@@ -144,18 +144,33 @@ namespace secp256k1 {
             return sub(x);
         }
 
-		void exportWords(unsigned int *buf, int len, int endian = LittleEndian) const
-		{
-			if(endian == LittleEndian) {
-				for(int i = 0; i < len; i++) {
-					buf[i] = v[i];
-				}
-			} else {
-				for(int i = 0; i < len; i++) {
-					buf[len - i - 1] = v[i];
-				}
-			}
-		}
+                void exportWords(unsigned int *buf, int len, int endian = LittleEndian) const
+                {
+                        if(endian == LittleEndian) {
+                                for(int i = 0; i < len; i++) {
+                                        buf[i] = v[i];
+                                }
+                        } else {
+                                for(int i = 0; i < len; i++) {
+                                        buf[len - i - 1] = v[i];
+                                }
+                        }
+                }
+
+                static uint256 importBigEndian(const unsigned int *src, int words)
+                {
+                        uint256 val;
+                        for(int i = 0; i < 8; i++) {
+                                val.v[i] = 0;
+                        }
+                        for(int i = 0; i < words && i < 8; i++) {
+                                unsigned int w = src[words - 1 - i];
+                                w = (w << 24) | ((w << 8) & 0x00ff0000U) |
+                                    ((w >> 8) & 0x0000ff00U) | (w >> 24);
+                                val.v[i] = w;
+                        }
+                        return val;
+                }
 
 		uint256 mul(const uint256 &val) const;
 
