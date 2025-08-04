@@ -99,18 +99,29 @@ __kernel void pollard_random_walk(__global PollardWindow *out,
                                   __global uint *outCount,
                                   uint maxOut,
                                   __global ulong *seeds,
+                                  __global ulong *starts,
+                                  __global uint *startX,
+                                  __global uint *startY,
                                   uint steps,
                                   __global const TargetWindow *windows,
                                   uint windowCount)
 {
     size_t gid = get_global_id(0);
     RNGState rng = { seeds[gid] ^ (ulong)1, seeds[gid] + (ulong)1 };
-    ulong scalar = 0UL;
+    ulong scalar = starts[gid];
     const ulong ORDER = (ulong)0xBFD25E8CD0364141UL;
 
     uint px[8];
     uint py[8];
-    setPointInfinity(px, py);
+
+    if(startX && startY) {
+        for(int i = 0; i < 8; i++) {
+            px[i] = startX[gid * 8 + i];
+            py[i] = startY[gid * 8 + i];
+        }
+    } else {
+        scalarMultiplyBase(scalar, px, py);
+    }
 
     for(uint i = 0; i < steps; i++) {
         ulong step = next_random_step(&rng);
@@ -120,25 +131,17 @@ __kernel void pollard_random_walk(__global PollardWindow *out,
         uint sx[8];
         uint sy[8];
         scalarMultiplyBase(step, sx, sy);
+        uint tx[8];
+        uint ty[8];
+        pointAdd(px, py, sx, sy, tx, ty);
+        copyBigInt(tx, px);
+        copyBigInt(ty, py);
 
-        if(isInfinity(px)) {
-            copyBigInt(sx, px);
-            copyBigInt(sy, py);
-        } else {
-            uint tx[8];
-            uint ty[8];
-            pointAdd(px, py, sx, sy, tx, ty);
-            copyBigInt(tx, px);
-            copyBigInt(ty, py);
-        }
-
-        // Compute the RIPEMD160 of the current point once per step
         uint digest[5];
         uint finalHash[5];
         hashPublicKeyCompressed(px, py[7], digest);
         doRMD160FinalRound(digest, finalHash);
 
-        // Compare all requested windows against their targets
         for(uint w = 0; w < windowCount; w++) {
             TargetWindow tw = windows[w];
             ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
