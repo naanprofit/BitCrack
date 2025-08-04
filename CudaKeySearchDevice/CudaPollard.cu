@@ -24,8 +24,8 @@ struct TargetWindow {
 };
 
 struct RNGState {
-    unsigned long long s0;
-    unsigned long long s1;
+    uint64_t s0;
+    uint64_t s1;
 };
 
 // Output structure used by the legacy random walk kernel. Each entry
@@ -35,10 +35,10 @@ struct CudaPollardMatch {
     unsigned int k[8];
     unsigned int hash[5];
 };
-__device__ static inline unsigned long long xorshift128plus(RNGState &state)
+__device__ static inline uint64_t xorshift128plus(RNGState &state)
 {
-    unsigned long long x = state.s0;
-    unsigned long long y = state.s1;
+    uint64_t x = state.s0;
+    uint64_t y = state.s1;
     state.s0 = y;
     x ^= x << 23;
     x ^= x >> 17;
@@ -102,7 +102,7 @@ __device__ static inline void addModN(const unsigned int a[8], const unsigned in
 __device__ static inline void next_random_step(RNGState &state, unsigned int step[8]) {
     do {
         for(int i = 0; i < 4; ++i) {
-            unsigned long long v = xorshift128plus(state);
+            uint64_t v = xorshift128plus(state);
             step[i * 2]     = (unsigned int)(v & 0xffffffffULL);
             step[i * 2 + 1] = (unsigned int)(v >> 32);
         }
@@ -338,8 +338,10 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
         scalarMultiplyBase(scalar, px, py);
     }
 
-    unsigned long long s0 = ((unsigned long long)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
-    unsigned long long s1 = ((unsigned long long)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
+    uint64_t s0 = ((uint64_t)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
+    uint64_t s1 = ((uint64_t)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
+    s0 ^= ((uint64_t)seeds[tid*8 + 5] << 32) | seeds[tid*8 + 4];
+    s1 ^= ((uint64_t)seeds[tid*8 + 7] << 32) | seeds[tid*8 + 6];
     RNGState rng{ s0 ^ 1ULL, s1 + 1ULL };
 
     unsigned int mask[8];
@@ -425,8 +427,10 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
     }
 
     if(isZero256(stride)) {
-        unsigned long long s0 = ((unsigned long long)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
-        unsigned long long s1 = ((unsigned long long)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
+        uint64_t s0 = ((uint64_t)seeds[tid*8 + 1] << 32) | seeds[tid*8 + 0];
+        uint64_t s1 = ((uint64_t)seeds[tid*8 + 3] << 32) | seeds[tid*8 + 2];
+        s0 ^= ((uint64_t)seeds[tid*8 + 5] << 32) | seeds[tid*8 + 4];
+        s1 ^= ((uint64_t)seeds[tid*8 + 7] << 32) | seeds[tid*8 + 6];
         RNGState rng{ s0 ^ 1ULL, s1 + 1ULL };
         for(unsigned int i = 0; i < steps; ++i) {
             unsigned int step[8];

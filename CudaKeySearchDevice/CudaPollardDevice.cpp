@@ -84,7 +84,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     unsigned int blocks = prop.multiProcessorCount;
     unsigned int totalThreads = threadsPerBlock * blocks;
 
-    // Build per-thread seeds and starting scalars using the ``start`` value
+    // Build per-thread 256-bit seeds and starting scalars using the ``start`` value
     std::vector<unsigned int> h_seeds(totalThreads * 8);
     std::vector<unsigned int> h_starts(totalThreads * 8);
     std::vector<unsigned int> h_stride(totalThreads * 8);
@@ -185,6 +185,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     unsigned int blocks = prop.multiProcessorCount;
     unsigned int totalThreads = threadsPerBlock * blocks;
 
+    // Prepare per-thread 256-bit seeds, starting scalars and points
     std::vector<unsigned int> h_seeds(totalThreads * 8);
     std::vector<unsigned int> h_starts(totalThreads * 8);
     std::vector<unsigned int> h_startX(totalThreads * 8);
