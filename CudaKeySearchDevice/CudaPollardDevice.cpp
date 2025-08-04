@@ -3,6 +3,11 @@
 #include <vector>
 #include <cstring>
 
+static inline unsigned int bswap32(unsigned int x) {
+    return (x << 24) | ((x << 8) & 0x00ff0000U) |
+           ((x >> 8) & 0x0000ff00U) | (x >> 24);
+}
+
 using namespace secp256k1;
 
 struct GpuPollardWindow {
@@ -23,7 +28,8 @@ static uint256 hashWindowLE(const unsigned int h[5], unsigned int offset, unsign
     uint256 out(0);
     unsigned int word = offset / 32;
     unsigned int bit = offset % 32;
-    unsigned int words = (bits + 31) / 32;
+    unsigned int span = bit + bits;
+    unsigned int words = (span + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -31,8 +37,8 @@ static uint256 hashWindowLE(const unsigned int h[5], unsigned int offset, unsign
         }
         out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
-    if(bits % 32) {
-        unsigned int mask = (1u << (bits % 32)) - 1u;
+    if(span % 32) {
+        unsigned int mask = (1u << (span % 32)) - 1u;
         out.v[words - 1] &= mask;
     }
     for(unsigned int i = words; i < 8; ++i) {
@@ -62,8 +68,16 @@ CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      const std::vector<unsigned int> &offsets,
                                      const std::vector<std::array<unsigned int,5>> &targets,
                                      bool debug)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets),
-      _debug(debug) {}
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _debug(debug) {
+    _targets.reserve(targets.size());
+    for(const auto &t : targets) {
+        std::array<unsigned int,5> le;
+        for(int i = 0; i < 5; ++i) {
+            le[i] = bswap32(t[4 - i]);
+        }
+        _targets.push_back(le);
+    }
+}
 
 void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
                                       uint64_t seed, bool sequential) {

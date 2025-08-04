@@ -7,6 +7,11 @@
 #include "clContext.h"
 #include "clutil.h"
 
+static inline unsigned int bswap32(unsigned int x) {
+    return (x << 24) | ((x << 8) & 0x00ff0000U) |
+           ((x >> 8) & 0x0000ff00U) | (x >> 24);
+}
+
 using namespace secp256k1;
 
 CLPollardDevice::CLPollardDevice(PollardEngine &engine,
@@ -14,8 +19,16 @@ CLPollardDevice::CLPollardDevice(PollardEngine &engine,
                                  const std::vector<unsigned int> &offsets,
                                  const std::vector<std::array<unsigned int,5>> &targets,
                                  bool debug)
-    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _targets(targets),
-      _debug(debug) {}
+    : _engine(engine), _windowBits(windowBits), _offsets(offsets), _debug(debug) {
+    _targets.reserve(targets.size());
+    for(const auto &t : targets) {
+        std::array<unsigned int,5> le;
+        for(int i = 0; i < 5; ++i) {
+            le[i] = bswap32(t[4 - i]);
+        }
+        _targets.push_back(le);
+    }
+}
 
 uint256 CLPollardDevice::maskBits(unsigned int bits) {
     uint256 m(0);

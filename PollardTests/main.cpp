@@ -3,6 +3,9 @@
 #include <array>
 #include <cstdint>
 #include <fstream>
+#include <cstdio>
+#include <string>
+#include <sstream>
 #include "AddressUtil.h"
 #include "../secp256k1lib/secp256k1_glv.h"
 
@@ -81,6 +84,35 @@ static std::vector<RefMatch> referenceWalk(uint64_t seed, unsigned int steps, un
     return out;
 }
 
+static inline unsigned int bswap32(unsigned int x) {
+    return (x << 24) | ((x << 8) & 0x00ff0000U) |
+           ((x >> 8) & 0x0000ff00U) | (x >> 24);
+}
+
+static secp256k1::uint256 hashWindowLE(const unsigned int h[5], unsigned int offset,
+                                       unsigned int bits) {
+    secp256k1::uint256 out(0);
+    unsigned int word = offset / 32;
+    unsigned int bit = offset % 32;
+    unsigned int span = bit + bits;
+    unsigned int words = (span + 31) / 32;
+    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+        uint64_t val = ((uint64_t)h[word + i]) >> bit;
+        if(bit && word + i + 1 < 5) {
+            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
+        }
+        out.v[i] = static_cast<unsigned int>(val & 0xffffffffULL);
+    }
+    if(span % 32) {
+        unsigned int mask = (1u << (span % 32)) - 1u;
+        out.v[words - 1] &= mask;
+    }
+    for(unsigned int i = words; i < 8; ++i) {
+        out.v[i] = 0u;
+    }
+    return out;
+}
+
 bool testDeterministicSeed() {
     auto matches = referenceWalk(2ULL, 1000, 8);
     const uint64_t expectedK[1] = {10820130499599738880ULL};
@@ -120,6 +152,47 @@ bool testGlvMatchesClassic() {
     secp256k1::ecpoint classic = secp256k1::multiplyPoint(k, secp256k1::G());
     secp256k1::ecpoint glv = scalarMultiplyBase(sample);
     return classic.x == glv.x && classic.y == glv.y;
+}
+
+bool testHashWindowLEPython() {
+    secp256k1::ecpoint p = scalarMultiplyBase(1ULL);
+    unsigned int be[5];
+    Hash::hashPublicKeyCompressed(p, be);
+    unsigned int le[5];
+    for(int i = 0; i < 5; ++i) {
+        le[i] = bswap32(be[4 - i]);
+    }
+    secp256k1::uint256 got = hashWindowLE(le, 0, 160);
+
+    const char *cmd =
+        "python3 - <<'PY'\n"
+        "import hashlib\n"
+        "pub=bytes.fromhex('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798')\n"
+        "r=hashlib.new('ripemd160', hashlib.sha256(pub).digest()).digest()\n"
+        "print(hex(int.from_bytes(r,'big')))\n"
+        "PY";
+    FILE *pipe = popen(cmd, "r");
+    if(!pipe) return false;
+    char buffer[128];
+    std::string py;
+    while(fgets(buffer, sizeof(buffer), pipe)) {
+        py += buffer;
+    }
+    pclose(pipe);
+    while(!py.empty() && (py.back() == '\n' || py.back() == '\r')) py.pop_back();
+    if(py.rfind("0x", 0) == 0) py = py.substr(2);
+    std::array<unsigned int,5> arr{};
+    for(int i = 0; i < 5; ++i) {
+        std::string word = py.substr((4 - i) * 8, 8);
+        unsigned int w = 0;
+        std::stringstream ss;
+        ss << std::hex << word;
+        ss >> w;
+        arr[i] = bswap32(w);
+    }
+    secp256k1::uint256 expected;
+    for(int i = 0; i < 5; ++i) expected.v[i] = arr[i];
+    return got == expected;
 }
 
 static bool runOpenCLScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]) {
@@ -209,6 +282,7 @@ int main(){
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
+    if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
     } else {
