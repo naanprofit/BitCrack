@@ -136,13 +136,11 @@ __kernel void pollard_random_walk(__global PollardWindow *out,
         copyBigInt(tx, px);
         copyBigInt(ty, py);
 
-        // Compute the RIPEMD160 of the current point once per step
         uint digest[5];
         uint finalHash[5];
         hashPublicKeyCompressed(px, py[7], digest);
         doRMD160FinalRound(digest, finalHash);
 
-        // Compare all requested windows against their targets
         for(uint w = 0; w < windowCount; w++) {
             TargetWindow tw = windows[w];
             ulong hv = hashWindow(finalHash, tw.offset, tw.bits);
