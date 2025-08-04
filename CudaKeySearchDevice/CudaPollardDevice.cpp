@@ -75,7 +75,7 @@ CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
 }
 
 void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
-                                      uint64_t seed, bool sequential) {
+                                      const uint256 &seed, bool sequential) {
     // Determine launch configuration based on device capabilities
     cudaDeviceProp prop;
     int dev = 0;
@@ -94,7 +94,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     std::vector<unsigned int> h_stride(totalThreads * 8);
     uint256 strideVal = sequential ? uint256(totalThreads) : uint256(0);
     for(unsigned int i = 0; i < totalThreads; ++i) {
-        uint256 sSeed(seed + i);
+        uint256 sSeed = seed + uint256(i);
         sSeed.exportWords(&h_seeds[i*8], 8);
         uint256 sStart = addModN(start, uint256(i));
         sStart.exportWords(&h_starts[i*8], 8);
@@ -176,7 +176,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 }
 
 void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
-                                      uint64_t seed, bool sequential) {
+                                      const uint256 &seed, bool sequential) {
     // Determine launch configuration similar to tame walk
     cudaDeviceProp prop;
     int dev = 0;
@@ -205,7 +205,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     ecpoint startPoint = multiplyPoint(start, G());
 
     for(unsigned int i = 0; i < totalThreads; ++i) {
-        uint256 sSeed(seed + i);
+        uint256 sSeed = seed + uint256(i);
         sSeed.exportWords(&h_seeds[i*8], 8);
         uint256 s = sequential ? subModN(startBase, uint256(i)) : uint256(0);
         s.exportWords(&h_starts[i*8], 8);

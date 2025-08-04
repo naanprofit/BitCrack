@@ -19,9 +19,9 @@ public:
                       bool debug);
 
     void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
-                       uint64_t seed, bool sequential) override;
+                       const secp256k1::uint256 &seed, bool sequential) override;
     void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
-                       uint64_t seed, bool sequential) override;
+                       const secp256k1::uint256 &seed, bool sequential) override;
     bool popResult(PollardMatch &out) override { (void)out; return false; }
 };
 

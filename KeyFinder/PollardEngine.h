@@ -16,9 +16,9 @@ class PollardDevice {
 public:
     virtual ~PollardDevice() {}
     virtual void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
-                               uint64_t seed, bool sequential) = 0;
+                               const secp256k1::uint256 &seed, bool sequential) = 0;
     virtual void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
-                               uint64_t seed, bool sequential) = 0;
+                               const secp256k1::uint256 &seed, bool sequential) = 0;
     // CPU implementations may still emit ``PollardMatch`` results which are
     // converted to ``PollardWindow`` objects by the engine.  GPU
     // implementations can enqueue ``PollardWindow`` structures directly.
@@ -76,9 +76,9 @@ public:
     // overloads with a seed parameter enable deterministic behaviour for
     // testing and for GPU implementations that require an explicit seed.
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps);
-    void runTameWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
+    void runTameWalk(const secp256k1::uint256 &start, uint64_t steps, const secp256k1::uint256 &seed);
     void runWildWalk(const secp256k1::uint256 &start, uint64_t steps);
-    void runWildWalk(const secp256k1::uint256 &start, uint64_t steps, uint64_t seed);
+    void runWildWalk(const secp256k1::uint256 &start, uint64_t steps, const secp256k1::uint256 &seed);
 
     // Replace the underlying device used to generate walk results.  By
     // default a CPU implementation is used which enables unit tests to run

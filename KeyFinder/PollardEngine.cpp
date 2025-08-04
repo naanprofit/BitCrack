@@ -43,14 +43,14 @@ public:
         : _windowBits(windowBits), _buffer(1024) {}
 
     void startTameWalk(const uint256 &start, uint64_t steps,
-                       uint64_t seed, bool sequential) override;
+                       const uint256 &seed, bool sequential) override;
     void startWildWalk(const uint256 &start, uint64_t steps,
-                       uint64_t seed, bool sequential) override;
+                       const uint256 &seed, bool sequential) override;
     bool popResult(PollardMatch &out) override { return _buffer.pop(out); }
 };
 
 void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
-                                     uint64_t seed, bool sequential) {
+                                     const uint256 &seed, bool sequential) {
     _buffer.clear();
     uint256 k = start;
     ecpoint p = multiplyPoint(k, G());
@@ -72,7 +72,7 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
         return;
     }
 
-    std::mt19937_64 rng(seed);
+    std::mt19937_64 rng(seed.toUint64());
     uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
     std::uniform_int_distribution<uint64_t> dist(1, maxStep);
     for(uint64_t i = 0; i < steps; ++i) {
@@ -94,7 +94,7 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 }
 
 void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
-                                     uint64_t seed, bool sequential) {
+                                     const uint256 &seed, bool sequential) {
     _buffer.clear();
     uint256 k = start;
     ecpoint p = multiplyPoint(k, G());
@@ -121,7 +121,7 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         return;
     }
 
-    std::mt19937_64 rng(seed);
+    std::mt19937_64 rng(seed.toUint64());
     uint64_t maxStep = (_windowBits >= 64) ? std::numeric_limits<uint64_t>::max() : ((1ULL << _windowBits) - 1ULL);
     std::uniform_int_distribution<uint64_t> dist(1, maxStep);
 
@@ -473,10 +473,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
 }
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
-    runTameWalk(start, steps, std::random_device{}());
+    runTameWalk(start, steps, uint256(std::random_device{}()));
 }
 
-void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
+void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, const uint256 &seed) {
     if(!_device) {
         return;
     }
@@ -501,10 +501,10 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, uint64_t s
 }
 
 void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps) {
-    runWildWalk(start, steps, std::random_device{}());
+    runWildWalk(start, steps, uint256(std::random_device{}()));
 }
 
-void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, uint64_t seed) {
+void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint256 &seed) {
     if(!_device) {
         return;
     }
