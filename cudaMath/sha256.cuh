@@ -11,33 +11,33 @@ extern __constant__ unsigned int _K[64];
 extern __constant__ unsigned int _IV[8];
 
 
-__device__ __forceinline__ unsigned int rotr(unsigned int x, int n)
+static __device__ __forceinline__ unsigned int rotr(unsigned int x, int n)
 {
 	return (x >> n) ^ (x << (32 - n));
 }
 
-__device__ __forceinline__ unsigned int MAJ(unsigned int a, unsigned int b, unsigned int c)
+static __device__ __forceinline__ unsigned int MAJ(unsigned int a, unsigned int b, unsigned int c)
 {
 	return (a & b) ^ (a & c) ^ (b & c);
 }
 
-__device__ __forceinline__ unsigned int CH(unsigned int e, unsigned int f, unsigned int g)
+static __device__ __forceinline__ unsigned int CH(unsigned int e, unsigned int f, unsigned int g)
 {
 	return (e & f) ^ (~e & g);
 }
 
-__device__ __forceinline__ unsigned int s0(unsigned int x)
+static __device__ __forceinline__ unsigned int s0(unsigned int x)
 {
 	return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3);
 }
 
-__device__ __forceinline__ unsigned int s1(unsigned int x)
+static __device__ __forceinline__ unsigned int s1(unsigned int x)
 {
 	return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10);
 }
 
 
-__device__ __forceinline__ void round(unsigned int a, unsigned int b, unsigned int c, unsigned int &d, unsigned e, unsigned int f, unsigned int g, unsigned int &h, unsigned int m, unsigned int k)
+static __device__ __forceinline__ void round(unsigned int a, unsigned int b, unsigned int c, unsigned int &d, unsigned e, unsigned int f, unsigned int g, unsigned int &h, unsigned int m, unsigned int k)
 {
 	unsigned int s = CH(e, f, g) + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + k + m;
 
@@ -46,7 +46,7 @@ __device__ __forceinline__ void round(unsigned int a, unsigned int b, unsigned i
 	h += s + MAJ(a, b, c) + (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22));
 }
 
-__device__ void sha256PublicKey(const unsigned int x[8], const unsigned int y[8], unsigned int digest[8])
+static __device__ __forceinline__ void sha256PublicKey(const unsigned int x[8], const unsigned int y[8], unsigned int digest[8])
 {
 	unsigned int a, b, c, d, e, f, g, h;
 	unsigned int w[16];
@@ -358,7 +358,7 @@ __device__ void sha256PublicKey(const unsigned int x[8], const unsigned int y[8]
 	digest[7] = tmp[7] + h;
 }
 
-__device__ void sha256PublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsigned int digest[8])
+static __device__ __forceinline__ void sha256PublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsigned int digest[8])
 {
 	unsigned int a, b, c, d, e, f, g, h;
 	unsigned int w[16];
