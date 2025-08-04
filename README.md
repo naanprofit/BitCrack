@@ -71,8 +71,8 @@ Options:
 --continue FILE
     Save/load progress from FILE
 
---hash160 HEX
-    Add a 40-hex-character RIPEMD160 hash as a search target
+  --hash160 <40-hex-chars>
+      Add a target specified as a 40-hex-character RIPEMD160 hash
 ```
 
 #### Examples
