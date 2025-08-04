@@ -24,7 +24,7 @@ __constant__ unsigned int *_CHAIN[1];
 static unsigned int *_chainBufferPtr = NULL;
 
 
-__device__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
+static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
     const unsigned int iv[5] = {
         0x67452301,

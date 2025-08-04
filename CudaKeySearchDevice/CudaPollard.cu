@@ -46,7 +46,7 @@ __device__ static inline unsigned long long next_random_step(RNGState &state)
     return (xorshift128plus(state) % ORDER_MINUS_ONE) + 1ULL;
 }
 
-__device__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
+static __device__ __forceinline__ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
     const unsigned int iv[5] = {
         0x67452301,
