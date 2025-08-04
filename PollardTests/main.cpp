@@ -46,11 +46,9 @@ static inline uint64_t xorshift128plus(RNGState &st)
 static secp256k1::ecpoint scalarMultiplyBase(uint64_t k) {
     secp256k1::uint256 scalar(k);
     auto split = secp256k1::splitScalar(scalar);
+    secp256k1::ecpoint base2 = secp256k1::glvEndomorphismBasePoint();
     secp256k1::ecpoint p1 = secp256k1::multiplyPointSmall(split.k1, secp256k1::G());
-    secp256k1::ecpoint p2 = secp256k1::multiplyPointSmall(split.k2, secp256k1::G());
-    if(!split.k2.isZero()) {
-        p2 = secp256k1::glvEndomorphism(p2);
-    }
+    secp256k1::ecpoint p2 = secp256k1::multiplyPointSmall(split.k2, base2);
     return secp256k1::glvRecombine(split, p1, p2);
 }
 
