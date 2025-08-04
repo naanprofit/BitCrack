@@ -22,7 +22,7 @@ cuda:
 ;   ${NVCC} -c $$file -o ${CUDA_MATH}/$${file_name%.cu}.cu.o ${NVCCFLAGS} ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
-;${NVCC} -dlink ${NVCCFLAGS} -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
+;${NVCC} -dlink ${NVCCFLAGS} -gencode=arch=compute_${COMPUTE_CAP},code=sm_${COMPUTE_CAP} -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
 
 ;ar rvs ${LIBDIR}/lib$(NAME).a *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o
 
