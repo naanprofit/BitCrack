@@ -22,10 +22,17 @@ CXXFLAGS=-O2 -std=c++11
 
 # CUDA variables
 COMPUTE_CAP=89
-NVCC=nvcc
+
+# Path to a specific CUDA toolkit installation
+CUDA_HOME ?= /usr/local/cuda-12.0
+CUDA_BIN=${CUDA_HOME}/bin
+
+# Explicitly reference compiler and linker from the same toolkit
+NVCC=${CUDA_BIN}/nvcc
+NVLINK=${CUDA_BIN}/nvlink
+
 NVCCFLAGS=-std=c++11 -gencode=arch=compute_${COMPUTE_CAP},code=\"sm_${COMPUTE_CAP}\" -Xptxas="-v" -Xcompiler "${CXXFLAGS}"
 NVCCFLAGS+=-rdc=true
-CUDA_HOME=/usr/local/cuda
 CUDA_LIB=${CUDA_HOME}/lib64
 CUDA_INCLUDE=${CUDA_HOME}/include
 CUDA_MATH=$(CUR_DIR)/cudaMath
@@ -40,6 +47,7 @@ export LIBDIR
 export BINDIR
 export NVCC
 export NVCCFLAGS
+export NVLINK
 export LIBS
 export CXX
 export CXXFLAGS
