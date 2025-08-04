@@ -44,17 +44,18 @@ __constant uint ORDER[8] = {
     0xFFFFFFFEU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU
 };
 
-static const uint A1[8] = {2458184469U,3899429092U,2815716301U,814141985U,0U,0U,0U,0U};
-static const uint B1[8] = {180348099U,1867808681U,17729576U,3829628630U,0U,0U,0U,0U};
-static const uint A2[8] = {2638532568U,1472270477U,2833445878U,348803319U,1U,0U,0U,0U};
-static const uint B2[8] = {2458184469U,3899429092U,2815716301U,814141985U,0U,0U,0U,0U};
-static const uint G1[5] = {3944037802U,2430898820U,1808656492U,3525421012U,12422U};
-static const uint G2[5] = {3838059026U,2141784767U,2284351316U,2127954190U,58435U};
-static const uint _BETA[8] = {0x7AE96A2BU,0x657C0710U,0x6E64479EU,0xAC3434E9U,0x9CF04975U,0x12F58995U,0xC1396C28U,0x719501EEU};
+__constant uint A1[8] = {2458184469U,3899429092U,2815716301U,814141985U,0U,0U,0U,0U};
+__constant uint B1[8] = {180348099U,1867808681U,17729576U,3829628630U,0U,0U,0U,0U};
+__constant uint A2[8] = {2638532568U,1472270477U,2833445878U,348803319U,1U,0U,0U,0U};
+__constant uint B2[8] = {2458184469U,3899429092U,2815716301U,814141985U,0U,0U,0U,0U};
+__constant uint G1[5] = {3944037802U,2430898820U,1808656492U,3525421012U,12422U};
+__constant uint G2[5] = {3838059026U,2141784767U,2284351316U,2127954190U,58435U};
+__constant uint _BETA[8] = {0x7AE96A2BU,0x657C0710U,0x6E64479EU,0xAC3434E9U,0x9CF04975U,0x12F58995U,0xC1396C28U,0x719501EEU};
 
 bool equal(const __private uint *a, const __private uint *b);
 bool isInfinity(const __private uint *x);
 void mulModP(const __private uint *a, const __private uint *b, __private uint *r);
+void ripemd160sha256NoFinal(const __private unsigned int x[8], __private unsigned int digest[5]);
 
 int isZero256(const uint a[8]) {
     for(int i=0;i<8;i++) {
@@ -83,7 +84,7 @@ void sub256(const __private uint *a, const __constant uint *b, __private uint *r
     }
 }
 
-void addModN(const uint a[8], const uint b[8], uint r[8]) {
+void addModN(const __private uint a[8], const __private uint b[8], __private uint r[8]) {
     uint carry = 0U;
     for(int i=0;i<8;i++) {
         uint ai = a[i];
@@ -98,7 +99,7 @@ void addModN(const uint a[8], const uint b[8], uint r[8]) {
     }
 }
 
-void next_random_step(__private RNGState *state, uint step[8]) {
+void next_random_step(__private RNGState *state, __private uint step[8]) {
     do {
         for(int i=0;i<4;i++) {
             ulong v = xorshift128plus(state);
@@ -108,21 +109,31 @@ void next_random_step(__private RNGState *state, uint step[8]) {
     } while(isZero256(step) || ge256(step, ORDER));
 }
 
-static inline uint256_t toUint256(const uint a[8]) {
+static inline uint256_t toUint256(const __private uint a[8]) {
     uint256_t r;
     for(int i=0;i<8;i++) r.v[i] = a[i];
     return r;
 }
 
-static inline void fromUint256(uint256_t a, uint r[8]) {
+static inline uint256_t toUint256Const(const __constant uint a[8]) {
+    uint256_t r;
+    for(int i=0;i<8;i++) r.v[i] = a[i];
+    return r;
+}
+
+static inline void fromUint256(uint256_t a, __private uint r[8]) {
     for(int i=0;i<8;i++) r[i] = a.v[i];
 }
 
-void copyBigInt(const uint src[8], uint dest[8]) {
+void copyBigInt(const __private uint src[8], __private uint dest[8]) {
     for(int i=0;i<8;i++) dest[i] = src[i];
 }
 
-void glvMulWords(const uint *x, int xLen, const uint *y, int yLen, uint *z) {
+void copyBigIntConst(const __constant uint src[8], __private uint dest[8]) {
+    for(int i=0;i<8;i++) dest[i] = src[i];
+}
+
+void glvMulWords(const __private uint *x, int xLen, const __constant uint *y, int yLen, __private uint *z) {
     for(int i=0;i<xLen+yLen;i++) z[i]=0U;
     for(int i=0;i<xLen;i++) {
         uint carry=0U;
@@ -135,7 +146,7 @@ void glvMulWords(const uint *x, int xLen, const uint *y, int yLen, uint *z) {
     }
 }
 
-int glvCmp(const uint *a, const uint *b, int len) {
+int glvCmp(const __private uint *a, const __private uint *b, int len) {
     for(int i=len-1;i>=0;--i) {
         if(a[i]>b[i]) return 1;
         if(a[i]<b[i]) return -1;
@@ -143,7 +154,7 @@ int glvCmp(const uint *a, const uint *b, int len) {
     return 0;
 }
 
-void glvAdd(const uint *a, const uint *b, int len, uint *r) {
+void glvAdd(const __private uint *a, const __private uint *b, int len, __private uint *r) {
     uint carry=0U;
     for(int i=0;i<len;i++) {
         uint ai=a[i];
@@ -155,7 +166,7 @@ void glvAdd(const uint *a, const uint *b, int len, uint *r) {
     }
 }
 
-void glvSub(const uint *a, const uint *b, int len, uint *r) {
+void glvSub(const __private uint *a, const __private uint *b, int len, __private uint *r) {
     uint borrow=0U;
     for(int i=0;i<len;i++) {
         uint ai=a[i];
@@ -174,7 +185,7 @@ typedef struct {
     int k2Neg;
 } GLVSplit;
 
-void splitScalar(const uint k[8], __private GLVSplit *out) {
+void splitScalar(const __private uint k[8], __private GLVSplit *out) {
     uint prod1[13];
     glvMulWords(k,8,G1,5,prod1);
     uint c1[8]={0};
@@ -222,38 +233,45 @@ void splitScalar(const uint k[8], __private GLVSplit *out) {
     }
 }
 
-void setPointInfinity(uint x[8], uint y[8]) {
+void setPointInfinity(__private uint x[8], __private uint y[8]) {
     for(int i=0;i<8;i++) {
         x[i] = 0xffffffffU;
         y[i] = 0xffffffffU;
     }
 }
 
-void addModP(const uint a[8], const uint b[8], uint r[8]) {
+void addModP(const __private uint a[8], const __private uint b[8], __private uint r[8]) {
     uint256_t aa = toUint256(a);
     uint256_t bb = toUint256(b);
     uint256_t cc = addModP256k(aa, bb);
     fromUint256(cc, r);
 }
 
-void subModP(const uint a[8], const uint b[8], uint r[8]) {
+void subModP(const __private uint a[8], const __private uint b[8], __private uint r[8]) {
     uint256_t aa = toUint256(a);
     uint256_t bb = toUint256(b);
     uint256_t cc = subModP256k(aa, bb);
     fromUint256(cc, r);
 }
 
-void invModP(const uint a[8], uint r[8]) {
+void subModPConst(const __constant uint a[8], const __private uint b[8], __private uint r[8]) {
+    uint256_t aa = toUint256Const(a);
+    uint256_t bb = toUint256(b);
+    uint256_t cc = subModP256k(aa, bb);
+    fromUint256(cc, r);
+}
+
+void invModP(const __private uint a[8], __private uint r[8]) {
     uint256_t aa = toUint256(a);
     uint256_t cc = invModP256k(aa);
     fromUint256(cc, r);
 }
 
-void negModP(const uint a[8], uint r[8]) {
-    subModP(_P, a, r);
+void negModP(const __private uint a[8], __private uint r[8]) {
+    subModPConst(_P, a, r);
 }
 
-void pointDouble(const uint x[8], const uint y[8], uint rx[8], uint ry[8]) {
+void pointDouble(const __private uint x[8], const __private uint y[8], __private uint rx[8], __private uint ry[8]) {
     if(isInfinity(x)) {
         setPointInfinity(rx, ry);
         return;
@@ -284,7 +302,7 @@ void pointDouble(const uint x[8], const uint y[8], uint rx[8], uint ry[8]) {
     subModP(ry, y, ry);
 }
 
-void pointAdd(const uint ax[8], const uint ay[8], const uint bx[8], const uint by[8], uint rx[8], uint ry[8]) {
+void pointAdd(const __private uint ax[8], const __private uint ay[8], const __private uint bx[8], const __private uint by[8], __private uint rx[8], __private uint ry[8]) {
     if(isInfinity(ax)) {
         copyBigInt(bx, rx);
         copyBigInt(by, ry);
@@ -352,8 +370,8 @@ void scalarMultiplyBase(const __private uint *k, __private uint *rx, __private u
     splitScalar(k, &s);
     uint base1x[8];
     uint base1y[8];
-    copyBigInt(_GX, base1x);
-    copyBigInt(_GY, base1y);
+    copyBigIntConst(_GX, base1x);
+    copyBigIntConst(_GY, base1y);
     uint r1x[8];
     uint r1y[8];
     scalarMultiplySmall(base1x, base1y, s.k1, r1x, r1y);
@@ -371,10 +389,10 @@ void scalarMultiplyBase(const __private uint *k, __private uint *rx, __private u
     uint base2y[8];
     uint gx[8];
     uint beta[8];
-    copyBigInt(_GX, gx);
-    copyBigInt(_BETA, beta);
+    copyBigIntConst(_GX, gx);
+    copyBigIntConst(_BETA, beta);
     mulModP(gx, beta, base2x);
-    copyBigInt(_GY, base2y);
+    copyBigIntConst(_GY, base2y);
     uint r2x[8];
     uint r2y[8];
     scalarMultiplySmall(base2x, base2y, s.k2, r2x, r2y);
@@ -390,7 +408,7 @@ unsigned int endian(unsigned int x)
     return (x << 24) | ((x << 8) & 0x00ff0000) | ((x >> 8) & 0x0000ff00) | (x >> 24);
 }
 
-void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
+void doRMD160FinalRound(const __private unsigned int hIn[5], __private unsigned int hOut[5])
 {
     const unsigned int iv[5] = {
         0x67452301,
@@ -405,7 +423,7 @@ void doRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
     }
 }
 
-void hashPublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsigned int* digestOut)
+void hashPublicKeyCompressed(const __private unsigned int x[8], unsigned int yParity, __private unsigned int* digestOut)
 {
     unsigned int hash[8];
 
@@ -423,7 +441,7 @@ void hashPublicKeyCompressed(const unsigned int x[8], unsigned int yParity, unsi
 // returned as five 32-bit words with higher bits cleared.
 typedef struct { uint v[5]; } Hash160;
 
-Hash160 hashWindow(const uint h[5], uint offset, uint bits)
+Hash160 hashWindow(const __private uint h[5], uint offset, uint bits)
 {
     Hash160 out; 
     for(int i=0;i<5;i++) out.v[i]=0u;
