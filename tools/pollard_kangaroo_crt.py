@@ -222,58 +222,60 @@ def main():
 
     target = int.from_bytes(bytes.fromhex(args.target_rmd), 'little')
     chunk  = span // n
-    constraints = {}
 
-    while True:
-        jobs = []
+    def run_round():
+        constraints = {}
 
-        # tame jobs
-        if args.full or args.tames:
-            for _ in range(n_tame):
-                st = random.randint(L, U)
-                en = min(st + max_steps - 1, U)
-                jobs.append((target, ws, offsets, mask, st, en,
-                             max_steps, 'tame', args.verbose))
-        else:
-            for i in range(n_tame):
-                st = L + i*chunk
-                en = min(L + (i+1)*chunk - 1, U)
-                jobs.append((target, ws, offsets, mask, st, en,
-                             max_steps, 'tame', args.verbose))
+        while len(constraints) < len(offsets):
+            jobs = []
 
-        # wild jobs
-        if args.full:
-            for _ in range(n_wild):
-                en = random.randint(L, U)
-                st = max(L, en - max_steps + 1)
-                jobs.append((target, ws, offsets, mask, st, en,
-                             max_steps, 'wild', args.verbose))
-        else:
-            for j in range(n_wild):
-                en = U - j*chunk
-                st = max(L, en - chunk + 1)
-                jobs.append((target, ws, offsets, mask, st, en,
-                             max_steps, 'wild', args.verbose))
+            # tame jobs
+            if args.full or args.tames:
+                for _ in range(n_tame):
+                    st = random.randint(L, U)
+                    en = min(st + max_steps - 1, U)
+                    jobs.append((target, ws, offsets, mask, st, en,
+                                 max_steps, 'tame', args.verbose))
+            else:
+                for i in range(n_tame):
+                    st = L + i*chunk
+                    en = min(L + (i+1)*chunk - 1, U)
+                    jobs.append((target, ws, offsets, mask, st, en,
+                                 max_steps, 'tame', args.verbose))
 
-        # collect CRT constraints
-        with Pool(n) as pool:
-            for res in pool.imap_unordered(worker, jobs):
-                for off, lo in res.items():
-                    if args.full or off not in constraints:
-                        constraints[off] = lo
-                        if args.verbose:
-                            print(f"[MAIN] collected off={off} -> {lo}")
-                if len(constraints) == len(offsets):
-                    # Wait for workers to exit to avoid orphaned GPU tasks
-                    pool.close()
-                    pool.join()
-                    break
-
-        if len(constraints) < len(offsets):
+            # wild jobs
             if args.full:
-                continue
-            print(f"[ERROR] only {len(constraints)}/{len(offsets)} offsets found")
-            sys.exit(1)
+                for _ in range(n_wild):
+                    en = random.randint(L, U)
+                    st = max(L, en - max_steps + 1)
+                    jobs.append((target, ws, offsets, mask, st, en,
+                                 max_steps, 'wild', args.verbose))
+            else:
+                for j in range(n_wild):
+                    en = U - j*chunk
+                    st = max(L, en - chunk + 1)
+                    jobs.append((target, ws, offsets, mask, st, en,
+                                 max_steps, 'wild', args.verbose))
+
+            pool = Pool(n)
+            try:
+                for res in pool.imap_unordered(worker, jobs):
+                    for off, lo in res.items():
+                        if args.full or off not in constraints:
+                            constraints[off] = lo
+                            if args.verbose:
+                                print(f"[MAIN] collected off={off} -> {lo}")
+                    if len(constraints) == len(offsets):
+                        break
+            finally:
+                pool.close()
+                pool.join()
+
+            if len(constraints) < len(offsets):
+                if args.full:
+                    continue
+                print(f"[ERROR] only {len(constraints)}/{len(offsets)} offsets found")
+                sys.exit(1)
 
         conlist = [
             (1 << (off + ws),
@@ -286,7 +288,6 @@ def main():
         cands = enumerate_candidates(k0, Mval, L, U)
         print(f"candidates: {len(cands)}")
 
-        found = False
         for k in cands:
             h = privatekey_to_h160(k)
             print(f"test {k} -> {h}")
@@ -294,18 +295,20 @@ def main():
                 print("FOUND key:", k)
                 with open('KEYFOUND.TXT','a') as f:
                     f.write(f"{k}\n")
-                found = True
+                return True
+
+        return False
+
+    try:
+        while True:
+            if run_round():
                 break
-
-        if found:
-            sys.exit(0)
-
-        if args.full:
+            if not args.full:
+                print("no key found")
+                break
             print("no key found, relaunching walks...")
-            continue
-
-        print("no key found")
-        break
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == '__main__':
     main()
