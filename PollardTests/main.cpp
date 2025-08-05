@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <string>
 #include <sstream>
+#include <cctype>
 #include "AddressUtil.h"
 #include "../secp256k1lib/secp256k1.h"
 #include "../KeyFinder/PollardEngine.h"
@@ -68,6 +69,37 @@ static void fake_hash160(uint64_t k, std::array<unsigned int,5> &h)
     for(int i = 0; i < 5; ++i) {
         h[i] = static_cast<unsigned int>(xorshift128plus(st));
     }
+}
+
+static bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
+{
+    if(s.length() != 40) {
+        return false;
+    }
+
+    for(char c : s) {
+        if(!std::isxdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+
+    std::array<unsigned char,20> bytes;
+    for(int i = 0; i < 20; ++i) {
+        unsigned int b = 0;
+        std::stringstream ss;
+        ss << std::hex << s.substr(i * 2, 2);
+        ss >> b;
+        bytes[i] = static_cast<unsigned char>(b);
+    }
+
+    for(int i = 0; i < 5; ++i) {
+        hash[i] = static_cast<unsigned int>(bytes[i * 4]) |
+                  (static_cast<unsigned int>(bytes[i * 4 + 1]) << 8) |
+                  (static_cast<unsigned int>(bytes[i * 4 + 2]) << 16) |
+                  (static_cast<unsigned int>(bytes[i * 4 + 3]) << 24);
+    }
+
+    return true;
 }
 
 static std::vector<RefMatch> referenceWalk(uint64_t seed, unsigned int steps, unsigned int windowBits) {
@@ -304,6 +336,27 @@ bool testHashWindowOffsets() {
     return true;
 }
 
+bool testParseHash160Windows() {
+    std::array<unsigned int,5> h{};
+    if(!parseHash160("e2192e8a7dd8dd1c88321959b477968b941aa973", h)) {
+        return false;
+    }
+    unsigned int offsets[4] = {0,20,40,60};
+    unsigned int expected[4] = {0xe2, 0xa2, 0xd8, 0x81};
+    for(int i = 0; i < 4; ++i) {
+        auto got = hashWindowLE(h.data(), offsets[i], 8);
+        if(got[0] != expected[i]) {
+            return false;
+        }
+        for(int j = 1; j < 5; ++j) {
+            if(got[j] != 0u) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 class StubDevice : public PollardDevice {
     PollardMatch _m;
     bool _sent = false;
@@ -494,6 +547,7 @@ int main(){
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
     if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
     if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
+    if(!testParseHash160Windows()) { std::cout<<"parse hash windows failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
