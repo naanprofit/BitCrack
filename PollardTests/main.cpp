@@ -498,6 +498,102 @@ bool testParseHash160Windows() {
     return true;
 }
 
+// Extract bit windows across word boundaries and verify edge cases
+// of hashWindowLE using a Python reference implementation.
+bool testHashWindowLEEdgeCases() {
+    const unsigned int be[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    unsigned int le[5];
+    // Convert big-endian digest to little-endian words
+    secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
+
+    struct Case {
+        unsigned int off;
+        unsigned int bits;
+        std::vector<unsigned int> expected;
+    };
+
+    std::vector<Case> cases = {
+        {28u, 10u, {}},  // crosses 32-bit boundary
+        {60u, 10u, {}},  // crosses 64-bit boundary
+        {92u, 20u, {}},  // crosses 96-bit boundary
+        {124u, 10u, {}}, // crosses 128-bit boundary
+        {128u, 32u, {}}, // exactly consumes final 32 bits
+        {145u, 14u, {}}, // ends just before 160
+        {150u, 10u, {}}  // touches the 160-bit limit
+    };
+
+    std::ostringstream cmd;
+    cmd << "python3 - <<'PY'\n";
+    cmd << "h=bytes.fromhex('751e76e8199196d454941c45d1b3a323f1433bd6')\n";
+    cmd << "w=[int.from_bytes(h[::-1][i*4:(i+1)*4],'big') for i in range(5)]\n";
+    cmd << "def hw(words,off,bits):\n";
+    cmd << "    word=off//32\n    bit=off%32\n    num=(bits+31)//32\n";
+    cmd << "    out=[0]*num\n";
+    cmd << "    for i in range(num):\n";
+    cmd << "        if word+i<5:\n";
+    cmd << "            val=(words[word+i]>>bit)&0xffffffff\n";
+    cmd << "            if bit and word+i+1<5:\n";
+    cmd << "                val|=(words[word+i+1]<<(32-bit))&0xffffffff\n";
+    cmd << "            out[i]=val\n";
+    cmd << "    mask=bits%32\n";
+    cmd << "    if mask:\n";
+    cmd << "        out[-1]&=(1<<mask)-1\n";
+    cmd << "    return out\n";
+    cmd << "cases=[";
+    for(size_t i = 0; i < cases.size(); ++i) {
+        cmd << "(" << cases[i].off << "," << cases[i].bits << ")";
+        if(i + 1 < cases.size()) cmd << ",";
+    }
+    cmd << "]\n";
+    cmd << "for off,bits in cases:\n";
+    cmd << "    vals=hw(w,off,bits)\n";
+    cmd << "    print(off,bits,' '.join(hex(v) for v in vals))\n";
+    cmd << "PY";
+
+    FILE *pipe = popen(cmd.str().c_str(), "r");
+    if(!pipe) return false;
+    char buffer[256];
+    size_t idx = 0;
+    while(fgets(buffer, sizeof(buffer), pipe)) {
+        std::stringstream ss(buffer);
+        unsigned int off, bits;
+        ss >> off >> bits;
+        if(idx >= cases.size() || cases[idx].off != off || cases[idx].bits != bits) {
+            pclose(pipe);
+            return false;
+        }
+        std::string token;
+        while(ss >> token) {
+            if(token.rfind("0x",0) == 0) token = token.substr(2);
+            unsigned long long val = 0;
+            std::stringstream ts; ts << std::hex << token; ts >> val;
+            cases[idx].expected.push_back(static_cast<unsigned int>(val & 0xffffffffULL));
+        }
+        ++idx;
+    }
+    pclose(pipe);
+    if(idx != cases.size()) return false;
+
+    for(const auto &c : cases) {
+        auto got = hashWindowLE(le, c.off, c.bits);
+        unsigned int words = (c.bits + 31) / 32;
+        for(unsigned int i = 0; i < words; ++i) {
+            if(got[i] != c.expected[i]) return false;
+        }
+        for(unsigned int i = words; i < 5; ++i) {
+            if(got[i] != 0u) return false;
+        }
+    }
+
+    return true;
+}
+
 class StubDevice : public PollardDevice {
     PollardMatch _m;
     bool _sent = false;
@@ -781,6 +877,7 @@ int main(){
     if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
     if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
     if(!testParseHash160Windows()) { std::cout<<"parse hash windows failed"<<std::endl; fails++; }
+    if(!testHashWindowLEEdgeCases()) { std::cout<<"hash window edge cases failed"<<std::endl; fails++; }
     if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
