@@ -264,7 +264,9 @@ def main():
                         if args.verbose:
                             print(f"[MAIN] collected off={off} -> {lo}")
                 if len(constraints) == len(offsets):
-                    pool.terminate()
+                    # Wait for workers to exit to avoid orphaned GPU tasks
+                    pool.close()
+                    pool.join()
                     break
 
         if len(constraints) < len(offsets):
