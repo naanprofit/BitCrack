@@ -1,6 +1,7 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
 #include "AddressUtil.h"
+#include "../CudaKeySearchDevice/windowKernel.h"
 #include <algorithm>
 #include <cstring>
 #include <vector>
