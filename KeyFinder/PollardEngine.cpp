@@ -400,53 +400,68 @@ void PollardEngine::enumerateCandidate(const uint256 &priv, const ecpoint &pub) 
     if(!_callback) {
         return;
     }
-    // Compute the candidate's hash160 and ensure it matches one of the
-    // supplied targets before invoking the callback.  This avoids reporting
-    // non-matching candidates that may appear during the walk.
-    unsigned int be[5];
-    Hash::hashPublicKeyCompressed(pub, be);
-    unsigned int digest[5];
-    for(int i = 0; i < 5; ++i) {
-        digest[i] = util::endian(be[4 - i]);
-    }
+    // Compute both compressed and uncompressed hashes for the candidate and
+    // emit a result for any matching target.  This ensures targets specified
+    // via --pubkey (which may be compressed or uncompressed) are handled.
+    unsigned int beComp[5];
+    unsigned int beUncomp[5];
+    Hash::hashPublicKeyCompressed(pub, beComp);
+    Hash::hashPublicKey(pub, beUncomp);
 
     if(_debug) {
         Logger::log(LogLevel::Debug,
                     "k=" + secp256k1::uint256(priv).toString(16) +
                     " Px=" + secp256k1::uint256(pub.x).toString(16) +
                     " Py=" + secp256k1::uint256(pub.y).toString(16) +
-                    " hash=" + hashToString(be));
+                    " hash=" + hashToString(beComp));
     }
 
-    bool match = false;
+    unsigned int compDigest[5];
+    unsigned int uncompDigest[5];
+    for(int i = 0; i < 5; ++i) {
+        compDigest[i] = util::endian(beComp[4 - i]);
+        uncompDigest[i] = util::endian(beUncomp[4 - i]);
+    }
+
+    bool compMatch = false;
+    bool uncompMatch = false;
     for(const auto &t : _targets) {
-        bool same = true;
-        for(int i = 0; i < 5; ++i) {
-            if(digest[i] != t.hash[i]) {
-                same = false;
-                break;
-            }
+        if(!compMatch) {
+            compMatch = std::equal(compDigest, compDigest + 5, t.hash.begin());
         }
-        if(same) {
-            match = true;
+        if(!uncompMatch) {
+            uncompMatch = std::equal(uncompDigest, uncompDigest + 5, t.hash.begin());
+        }
+        if(compMatch && uncompMatch) {
             break;
         }
     }
 
-    if(!match) {
+    if(!compMatch && !uncompMatch) {
         return; // Candidate does not belong to the target set
     }
 
-    _reconstructionSuccess++;
+    if(compMatch) {
+        _reconstructionSuccess++;
+        KeySearchResult r;
+        r.privateKey = priv;
+        r.publicKey = pub;
+        r.compressed = true;
+        std::memcpy(r.hash, compDigest, sizeof(r.hash));
+        r.address = Address::fromPublicKey(pub, true);
+        _callback(r);
+    }
 
-    KeySearchResult r;
-    r.privateKey = priv;
-    r.publicKey = pub;
-    r.compressed = true;
-    std::memcpy(r.hash, digest, sizeof(r.hash));
-    r.address = Address::fromPublicKey(pub, true);
-
-    _callback(r);
+    if(uncompMatch) {
+        _reconstructionSuccess++;
+        KeySearchResult r;
+        r.privateKey = priv;
+        r.publicKey = pub;
+        r.compressed = false;
+        std::memcpy(r.hash, uncompDigest, sizeof(r.hash));
+        r.address = Address::fromPublicKey(pub, false);
+        _callback(r);
+    }
 }
 
 void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulus,

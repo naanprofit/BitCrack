@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <algorithm>
+#include <map>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -52,6 +53,7 @@ typedef struct {
 
     std::vector<std::string> targets;
     std::vector<std::array<unsigned int,5>> hash160Targets;
+    std::map<std::array<unsigned int,5>, std::string> targetTypes;
 
     std::string targetsFile = "";
 
@@ -102,7 +104,25 @@ void resultCallback(KeySearchResult info)
 
         std::string outFile = _config.resultsFile.length() != 0 ? _config.resultsFile : "found.txt";
 
-        Logger::log(LogLevel::Info, "Found key for address '" + info.address + "'. Written to '" + outFile + "'");
+        unsigned int be[5];
+        if(info.compressed) {
+                Hash::hashPublicKeyCompressed(info.publicKey, be);
+        } else {
+                Hash::hashPublicKey(info.publicKey, be);
+        }
+
+        std::array<unsigned int,5> h;
+        for(int i = 0; i < 5; ++i) {
+                h[i] = util::endian(be[4 - i]);
+        }
+
+        std::string source = "unknown";
+        auto it = _config.targetTypes.find(h);
+        if(it != _config.targetTypes.end()) {
+                source = it->second;
+        }
+
+        Logger::log(LogLevel::Info, "Found key for address '" + info.address + "' (source: " + source + "). Written to '" + outFile + "'");
 
         std::string s = info.address + " " + info.privateKey.toString(16) + " " + info.publicKey.toString(info.compressed);
         util::appendToFile(outFile, s);
@@ -218,7 +238,7 @@ bool parseKeyspace(const std::string &s, secp256k1::uint256 &start, secp256k1::u
 void usage()
 {
     printf("BitCrack OPTIONS [TARGETS]\n");
-    printf("Where TARGETS is one or more addresses or specify targets with --hash160\n\n");
+    printf("Where TARGETS is one or more addresses or specify targets with --hash160 or --pubkey\n\n");
 	
     printf("--help                  Display this message\n");
     printf("-c, --compressed        Use compressed points\n");
@@ -246,6 +266,7 @@ void usage()
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
     printf("--hash160 HEX          Add a target specified as a 40-hex-character RIPEMD160 hash\n");
+    printf("--pubkey HEX           Add a target specified as a 33- or 65-byte public key in hex\n");
     printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
     printf("--offsets LIST         Comma-separated bit offsets for CRT windows (required)\n");
     printf("--window-size N        Bits per window (default 8)\n");
@@ -256,7 +277,7 @@ void usage()
     printf("--full                 Process entire keyspace\n");
     printf("--deterministic       Use sequential deterministic walks\n");
     printf("--debug               Enable verbose Pollard debugging\n");
-    printf("\nAt least one target must be specified via an address or --hash160.\n");
+    printf("\nAt least one target must be specified via an address, --hash160, or --pubkey.\n");
 }
 
 
@@ -455,6 +476,21 @@ int runBruteForce()
 
         if(!_config.targetsFile.empty()) {
             f.setTargets(_config.targetsFile);
+            std::ifstream inFile(_config.targetsFile.c_str());
+            if(inFile.is_open()) {
+                std::string line;
+                while(std::getline(inFile, line)) {
+                    util::removeNewline(line);
+                    line = util::trim(line);
+                    if(line.length() > 0) {
+                        unsigned int h[5];
+                        Base58::toHash160(line, h);
+                        std::array<unsigned int,5> arr;
+                        for(int j=0;j<5;j++) arr[j]=h[j];
+                        _config.targetTypes[arr] = "address";
+                    }
+                }
+            }
         } else if(!_config.targets.empty()) {
             f.setTargets(_config.targets);
         }
@@ -504,6 +540,7 @@ int runPollard()
                     arr[i] = h[i];
                 }
                 targetHashes.push_back(arr);
+                _config.targetTypes[arr] = "address";
             }
         }
     } else {
@@ -515,6 +552,7 @@ int runPollard()
                 arr[j] = h[j];
             }
             targetHashes.push_back(arr);
+            _config.targetTypes[arr] = "address";
         }
     }
 
@@ -691,6 +729,48 @@ bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
     return true;
 }
 
+bool parsePubKey(const std::string &s, std::array<unsigned int,5> &hash)
+{
+    if(s.length() != 66 && s.length() != 130) {
+        return false;
+    }
+
+    for(char c : s) {
+        if(!std::isxdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+
+    unsigned int be[5];
+
+    if(s.length() == 66) {
+        std::array<unsigned char,33> bytes;
+        for(int i = 0; i < 33; ++i) {
+            unsigned int b = 0;
+            std::stringstream ss;
+            ss << std::hex << s.substr(i * 2, 2);
+            ss >> b;
+            bytes[i] = static_cast<unsigned char>(b);
+        }
+        Hash::hashPublicKeyCompressed(bytes.data(), be);
+    } else {
+        try {
+            secp256k1::ecpoint p;
+            p.x = secp256k1::uint256(s.substr(2, 64));
+            p.y = secp256k1::uint256(s.substr(66, 64));
+            Hash::hashPublicKey(p, be);
+        } catch(...) {
+            return false;
+        }
+    }
+
+    for(int i = 0; i < 5; ++i) {
+        hash[i] = util::endian(be[4 - i]);
+    }
+
+    return true;
+}
+
 int main(int argc, char **argv)
 {
 	bool optCompressed = false;
@@ -729,7 +809,7 @@ int main(int argc, char **argv)
 
     // Check for arguments
     if(argc == 1) {
-        Logger::log(LogLevel::Error, "No targets specified: provide addresses or --hash160");
+        Logger::log(LogLevel::Error, "No targets specified: provide addresses, --hash160, or --pubkey");
         usage();
         return 1;
     }
@@ -754,6 +834,7 @@ int main(int argc, char **argv)
     parser.add("", "--continue", true);
     parser.add("", "--share", true);
     parser.add("", "--hash160", true);
+    parser.add("", "--pubkey", true);
     parser.add("", "--stride", true);
     parser.add("", "--pollard", false);
     parser.add("", "--offsets", true);
@@ -859,6 +940,14 @@ int main(int argc, char **argv)
                     throw std::string("invalid argument: expected 40 hex characters");
                 }
                 _config.hash160Targets.push_back(arr);
+                _config.targetTypes[arr] = "hash160";
+            } else if(optArg.equals("", "--pubkey")) {
+                std::array<unsigned int,5> arr;
+                if(!parsePubKey(optArg.arg, arr)) {
+                    throw std::string("invalid argument: expected 66 or 130 hex characters");
+                }
+                _config.hash160Targets.push_back(arr);
+                _config.targetTypes[arr] = "pubkey";
             } else if(optArg.equals("", "--stride")) {
                 try {
                     _config.stride = secp256k1::uint256(optArg.arg);
@@ -959,7 +1048,7 @@ int main(int argc, char **argv)
     // expect addresses on the commandline
         if(ops.size() == 0) {
                 if(_config.targetsFile.length() == 0 && _config.hash160Targets.size() == 0) {
-                        Logger::log(LogLevel::Error, "No targets specified: provide addresses or --hash160");
+                        Logger::log(LogLevel::Error, "No targets specified: provide addresses, --hash160, or --pubkey");
                         usage();
                         return 1;
                 }
@@ -969,7 +1058,14 @@ int main(int argc, char **argv)
                 Logger::log(LogLevel::Error, "Invalid address '" + ops[i] + "'");
                 return 1;
             }
-                        _config.targets.push_back(ops[i]);
+            _config.targets.push_back(ops[i]);
+            unsigned int h[5];
+            Base58::toHash160(ops[i], h);
+            std::array<unsigned int,5> arr;
+            for(int j = 0; j < 5; j++) {
+                arr[j] = h[j];
+            }
+            _config.targetTypes[arr] = "address";
                 }
         }
     
