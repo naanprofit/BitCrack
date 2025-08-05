@@ -2,7 +2,7 @@ CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
 
 all:
 ifeq ($(BUILD_CUDA), 1)
-       ${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
+	${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
 	mkdir -p $(BINDIR)
 	cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
 endif
