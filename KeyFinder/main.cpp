@@ -217,7 +217,7 @@ bool parseKeyspace(const std::string &s, secp256k1::uint256 &start, secp256k1::u
 void usage()
 {
     printf("BitCrack OPTIONS [TARGETS]\n");
-    printf("Where TARGETS is one or more addresses\n\n");
+    printf("Where TARGETS is one or more addresses or specify targets with --hash160\n\n");
 	
     printf("--help                  Display this message\n");
     printf("-c, --compressed        Use compressed points\n");
@@ -255,6 +255,7 @@ void usage()
     printf("--full                 Process entire keyspace\n");
     printf("--deterministic       Use sequential deterministic walks\n");
     printf("--debug               Enable verbose Pollard debugging\n");
+    printf("\nAt least one target must be specified via an address or --hash160.\n");
 }
 
 
@@ -717,10 +718,11 @@ int main(int argc, char **argv)
 #endif
 
     // Check for arguments
-	if(argc == 1) {
-		usage();
-		return 0;
-	}
+    if(argc == 1) {
+        Logger::log(LogLevel::Error, "No targets specified: provide addresses or --hash160");
+        usage();
+        return 1;
+    }
 
 
 	CmdParse parser;
@@ -947,7 +949,7 @@ int main(int argc, char **argv)
     // expect addresses on the commandline
         if(ops.size() == 0) {
                 if(_config.targetsFile.length() == 0 && _config.hash160Targets.size() == 0) {
-                        Logger::log(LogLevel::Error, "Missing arguments");
+                        Logger::log(LogLevel::Error, "No targets specified: provide addresses or --hash160");
                         usage();
                         return 1;
                 }
