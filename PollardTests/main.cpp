@@ -189,6 +189,23 @@ bool testScalarOne() {
     return true;
 }
 
+bool testScalarOneUncompressed() {
+    secp256k1::ecpoint p = scalarMultiplyBase(1ULL);
+    unsigned int digest[5];
+    Hash::hashPublicKey(p, digest);
+    const unsigned int expected[5] = {
+        0x91b24bf9u,
+        0xf5288532u,
+        0x960ac687u,
+        0xabb03512u,
+        0x7b1d28a5u
+    };
+    for(int i = 0; i < 5; ++i) {
+        if(digest[i] != expected[i]) return false;
+    }
+    return true;
+}
+
 static bool pythonHash160(const std::string &pubHex, std::array<unsigned int,5> &out)
 {
     std::ostringstream cmd;
@@ -754,6 +771,7 @@ bool testCRTMixedOffsetsPython() {
 int main(){
     int fails=0;
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
+    if(!testScalarOneUncompressed()) { std::cout<<"scalar one uncompressed failed"<<std::endl; fails++; }
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(!testPollardWindowSizes()) { std::cout<<"pollard window sizes failed"<<std::endl; fails++; }
