@@ -599,6 +599,92 @@ bool testDeviceHashWindowLE() {
     return true;
 }
 
+bool testCRTMixedOffsetsPython() {
+    using namespace secp256k1;
+    uint256 key("123456789abcdef0123456789abcdef");
+    std::vector<unsigned int> offsets = {0u, 25u, 60u};
+    std::vector<unsigned int> sizes   = {16u, 10u, 20u};
+
+    std::vector<std::array<unsigned int,5>> targets(1);
+    PollardEngine engine([](KeySearchResult) {}, 8, offsets, targets,
+                         uint256(0), uint256(0));
+
+    struct Pair { uint256 mod; uint256 rem; };
+    std::vector<Pair> constraints;
+
+    for(size_t i = 0; i < offsets.size(); ++i) {
+        PollardWindow w{0u, offsets[i], sizes[i], key};
+        engine.processWindow(w);
+
+        unsigned int modBits = offsets[i] + sizes[i];
+        uint256 mod(0);
+        if(modBits < 256) {
+            mod.v[modBits / 32] = (1u << (modBits % 32));
+        }
+        uint256 rem = key;
+        if(modBits < 256) {
+            unsigned int word = modBits / 32;
+            unsigned int bit = modBits % 32;
+            if(bit) {
+                unsigned int mask = (1u << bit) - 1u;
+                rem.v[word] &= mask;
+                for(unsigned int j = word + 1; j < 8; ++j) rem.v[j] = 0u;
+            } else {
+                for(unsigned int j = word; j < 8; ++j) rem.v[j] = 0u;
+            }
+        }
+        constraints.push_back({mod, rem});
+    }
+
+    uint256 k0, M;
+    if(!engine.reconstruct(0, k0, M)) {
+        return false;
+    }
+
+    std::ostringstream cmd;
+    cmd << "python3 - <<'PY'\n";
+    cmd << "import math\n";
+    cmd << "def crt(constraints):\n";
+    cmd << "    x,M=0,1\n";
+    cmd << "    for mod,rem in constraints:\n";
+    cmd << "        g=math.gcd(M,mod)\n";
+    cmd << "        if (rem-x)%g: continue\n";
+    cmd << "        M_g,mod_g=M//g,mod//g\n";
+    cmd << "        inv=pow(M_g,-1,mod_g)\n";
+    cmd << "        t=((rem-x)//g*inv)%mod_g\n";
+    cmd << "        x+=M*t\n";
+    cmd << "        M*=mod_g\n";
+    cmd << "        x%=M\n";
+    cmd << "    return x,M\n";
+    cmd << "constraints=[";
+    for(size_t i = 0; i < constraints.size(); ++i) {
+        cmd << "(0x" << constraints[i].mod.toString(16)
+            << ",0x" << constraints[i].rem.toString(16) << ")";
+        if(i + 1 < constraints.size()) cmd << ",";
+    }
+    cmd << "]\n";
+    cmd << "k0,M=crt(constraints)\n";
+    cmd << "print(hex(k0))\nprint(hex(M))\n";
+    cmd << "PY";
+
+    FILE *pipe = popen(cmd.str().c_str(), "r");
+    if(!pipe) return false;
+    char buffer[256];
+    std::string out;
+    while(fgets(buffer, sizeof(buffer), pipe)) out += buffer;
+    pclose(pipe);
+
+    std::istringstream iss(out);
+    std::string kHex, mHex;
+    if(!(iss >> kHex)) return false;
+    if(!(iss >> mHex)) return false;
+    if(kHex.rfind("0x",0) == 0) kHex = kHex.substr(2);
+    if(mHex.rfind("0x",0) == 0) mHex = mHex.substr(2);
+    uint256 pyK(kHex);
+    uint256 pyM(mHex);
+    return k0 == pyK && M == pyM;
+}
+
 int main(){
     int fails=0;
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
@@ -612,6 +698,7 @@ int main(){
     if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
     if(!testParseHash160Windows()) { std::cout<<"parse hash windows failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
+    if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
     } else {
