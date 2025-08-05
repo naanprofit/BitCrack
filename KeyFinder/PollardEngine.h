@@ -28,8 +28,8 @@ public:
 class PollardEngine {
 public:
     struct Constraint {
-        unsigned int bits;              // number of low bits constrained
-        secp256k1::uint256 value;       // value modulo 2^bits
+        secp256k1::uint256 modulus;     // modulus (0 represents 2^256)
+        secp256k1::uint256 value;       // value modulo ``modulus``
     };
 
     using ResultCallback = std::function<void(KeySearchResult)>;
@@ -56,13 +56,12 @@ public:
                   bool sequential = false,
                   bool debug = false);
 
-    // Add a constraint of the form k \equiv value (mod 2^bits) for ``target``
-    void addConstraint(size_t target, unsigned int bits,
+    // Add a constraint of the form k \equiv value (mod ``modulus``) for ``target``
+    void addConstraint(size_t target, const secp256k1::uint256 &modulus,
                        const secp256k1::uint256 &value);
 
     // Attempt to reconstruct the private key for ``target`` from accumulated
-    // constraints using a CRT solver capable of combining arbitrarily large
-    // power-of-two moduli.
+    // constraints using a generic CRT solver.
     bool reconstruct(size_t target, secp256k1::uint256 &k0,
                      secp256k1::uint256 &modulus);
 

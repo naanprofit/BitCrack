@@ -9,6 +9,7 @@
 #include <thread>
 #include <sstream>
 #include <iomanip>
+#include <numeric>
 #include "../util/RingBuffer.h"
 #include "../util/util.h"
 #include "../Logger/Logger.h"
@@ -162,22 +163,98 @@ uint256 maskBits(unsigned int bits) {
     return m;
 }
 
-// Combine two congruences using a simple CRT solver tailored for moduli
-// that are powers of two.  The resulting constraint contains the union of
-// known low bits from ``a`` and ``b``.
+static bool toU128(const uint256 &x, unsigned __int128 &out) {
+    if(x.v[4] || x.v[5] || x.v[6] || x.v[7]) return false;
+    out = ((unsigned __int128)x.v[3] << 96) |
+          ((unsigned __int128)x.v[2] << 64) |
+          ((unsigned __int128)x.v[1] << 32) |
+          x.v[0];
+    return true;
+}
+
+static uint256 fromU128(unsigned __int128 x) {
+    uint256 r(0);
+    r.v[0] = (uint32_t)x;
+    r.v[1] = (uint32_t)(x >> 32);
+    r.v[2] = (uint32_t)(x >> 64);
+    r.v[3] = (uint32_t)(x >> 96);
+    return r;
+}
+
+static unsigned __int128 gcd_u128(unsigned __int128 a, unsigned __int128 b) {
+    while(b != 0) {
+        unsigned __int128 t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+static unsigned __int128 modInverse128(unsigned __int128 a, unsigned __int128 m) {
+    __int128_t t = 0, newt = 1;
+    __int128_t r = m, newr = a % m;
+    while(newr != 0) {
+        __int128_t q = r / newr;
+        __int128_t tmp = t - q * newt; t = newt; newt = tmp;
+        tmp = r - q * newr; r = newr; newr = tmp;
+    }
+    if(r != 1) return 0;
+    if(t < 0) t += m;
+    return (unsigned __int128)t;
+}
+
+static bool modulusBits(const uint256 &m, unsigned int &bits) {
+    if(m.isZero()) { bits = 256; return true; }
+    bool found = false;
+    for(int i = 7; i >= 0; --i) {
+        uint32_t w = m.v[i];
+        if(w) {
+            if((w & (w - 1)) != 0 || found) return false;
+            bits = i * 32 + __builtin_ctz(w);
+            found = true;
+        }
+    }
+    return found;
+}
+
+// Combine two congruences using a generic CRT solver.  If both moduli fit
+// within 128 bits a full solver with gcd and modular inverses is used.
+// Otherwise a power-of-two merge is attempted.
 bool combineCRT(const PollardEngine::Constraint &a,
                 const PollardEngine::Constraint &b,
                 PollardEngine::Constraint &out) {
-    unsigned int overlap = std::min(a.bits, b.bits);
-    uint256 mask = maskBits(overlap);
+    unsigned __int128 m1, m2, r1, r2;
+    if(toU128(a.modulus, m1) && toU128(b.modulus, m2) &&
+       toU128(a.value, r1) && toU128(b.value, r2)) {
+        unsigned __int128 g = gcd_u128(m1, m2);
+        if(((r1 >= r2) ? (r1 - r2) : (r2 - r1)) % g != 0) {
+            return false;
+        }
+        unsigned __int128 lcm = m1 / g * m2;
+        unsigned __int128 m1_g = m1 / g;
+        unsigned __int128 m2_g = m2 / g;
+        unsigned __int128 inv = modInverse128(m1_g % m2_g, m2_g);
+        if(inv == 0) return false;
+        unsigned __int128 t = (r2 + m2 - r1) % m2;
+        t = (t / g) % m2_g;
+        unsigned __int128 x = (r1 + m1 * ((t * inv) % m2_g)) % lcm;
+        out.value = fromU128(x);
+        out.modulus = fromU128(lcm);
+        return true;
+    }
 
+    unsigned int bitsA, bitsB;
+    if(!modulusBits(a.modulus, bitsA) || !modulusBits(b.modulus, bitsB)) {
+        return false;
+    }
+    unsigned int overlap = std::min(bitsA, bitsB);
+    uint256 mask = maskBits(overlap);
     for(int w = 0; w < 8; ++w) {
         if((a.value.v[w] & mask.v[w]) != (b.value.v[w] & mask.v[w])) {
             return false; // inconsistent constraints
         }
     }
-
-    out = (a.bits >= b.bits) ? a : b;
+    out = (bitsA >= bitsB) ? a : b;
     return true;
 }
 
@@ -286,12 +363,12 @@ void PollardEngine::setDevice(std::unique_ptr<PollardDevice> device) {
     _device = std::move(device);
 }
 
-void PollardEngine::addConstraint(size_t target, unsigned int bits,
+void PollardEngine::addConstraint(size_t target, const uint256 &modulus,
                                   const uint256 &value) {
     if(target >= _targets.size()) {
         return;
     }
-    Constraint c{bits, value};
+    Constraint c{modulus, value};
     _targets[target].constraints.push_back(c);
 }
 
@@ -307,7 +384,12 @@ bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
     std::vector<Constraint> sorted = vec;
     std::sort(sorted.begin(), sorted.end(),
               [](const Constraint &a, const Constraint &b) {
-                  return a.bits < b.bits;
+                  bool aInf = a.modulus.isZero();
+                  bool bInf = b.modulus.isZero();
+                  if(aInf && bInf) return false;
+                  if(aInf) return false;
+                  if(bInf) return true;
+                  return a.modulus.cmp(b.modulus) < 0;
               });
 
     Constraint acc = sorted[0];
@@ -320,14 +402,7 @@ bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
     }
 
     k0 = acc.value;
-    // modulus = 2^bits
-    if(acc.bits >= 256) {
-        modulus = uint256(0); // represents 2^256
-    } else {
-        modulus = uint256(0);
-        modulus.v[acc.bits / 32] = (1u << (acc.bits % 32));
-    }
-
+    modulus = acc.modulus;
     return true;
 }
 
@@ -375,7 +450,11 @@ void PollardEngine::processWindow(const PollardWindow &w) {
         }
     }
 
-    addConstraint(w.targetIdx, modBits, val);
+    uint256 mod(0);
+    if(modBits < 256) {
+        mod.v[modBits / 32] = (1u << (modBits % 32));
+    }
+    addConstraint(w.targetIdx, mod, val);
     _targets[w.targetIdx].seenOffsets.insert(w.offset);
 
     _reconstructionAttempts++;
