@@ -198,7 +198,7 @@ def run_round(args, L, U, ws, offsets, mask, max_steps, n, n_tame, n_wild,
                 if len(constraints) == len(offsets):
                     break
         finally:
-            pool.close()
+            pool.terminate()
             pool.join()
 
         if len(constraints) < len(offsets):
@@ -306,10 +306,11 @@ def main():
             if run_round(args, L, U, ws, offsets, mask, max_steps, n,
                          n_tame, n_wild, target, chunk):
                 break
-            if not args.full:
-                print("no key found")
-                break
-            print("no key found, relaunching walks...")
+            if args.full:
+                print("no key found, relaunching walks...")
+                continue
+            print("no key found")
+            break
     except KeyboardInterrupt:
         pass
 
