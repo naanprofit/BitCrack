@@ -189,6 +189,72 @@ bool testScalarOne() {
     return true;
 }
 
+static bool pythonHash160(const std::string &pubHex, std::array<unsigned int,5> &out)
+{
+    std::ostringstream cmd;
+    cmd << "python3 - <<'PY'\n"
+        << "import hashlib\n"
+        << "h=hashlib.new('ripemd160', hashlib.sha256(bytes.fromhex('" << pubHex
+        << "')).digest()).digest()\n"
+        << "print(h.hex())\n"
+        << "PY";
+
+    FILE *pipe = popen(cmd.str().c_str(), "r");
+    if(!pipe) return false;
+
+    char buffer[128];
+    std::string py;
+    while(fgets(buffer, sizeof(buffer), pipe)) {
+        py += buffer;
+    }
+    pclose(pipe);
+
+    while(!py.empty() && (py.back() == '\n' || py.back() == '\r')) py.pop_back();
+    if(py.length() != 40) return false;
+
+    for(int i = 0; i < 5; ++i) {
+        std::string word = py.substr(i * 8, 8);
+        unsigned int w = 0;
+        std::stringstream ss;
+        ss << std::hex << word;
+        ss >> w;
+        out[i] = w;
+    }
+
+    return true;
+}
+
+bool testHashPublicKeyVectors() {
+    using namespace secp256k1;
+    struct Case { ecpoint p; bool compressed; };
+    std::vector<Case> cases;
+
+    ecpoint p1 = scalarMultiplyBase(1ULL);
+    ecpoint p6 = scalarMultiplyBase(6ULL);
+    cases.push_back({p1, true});
+    cases.push_back({p6, true});
+    cases.push_back({p1, false});
+    cases.push_back({p6, false});
+
+    for(auto &c : cases) {
+        unsigned int digest[5];
+        if(c.compressed) {
+            Hash::hashPublicKeyCompressed(c.p, digest);
+        } else {
+            Hash::hashPublicKey(c.p, digest);
+        }
+
+        std::array<unsigned int,5> expected;
+        if(!pythonHash160(c.p.toString(c.compressed), expected)) return false;
+
+        for(int i = 0; i < 5; ++i) {
+            if(digest[i] != expected[i]) return false;
+        }
+    }
+
+    return true;
+}
+
 bool testGlvMatchesClassic() {
     uint64_t sample = 0x123456789abcdefULL;
     secp256k1::uint256 k(sample);
@@ -697,6 +763,7 @@ int main(){
     if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
     if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
     if(!testParseHash160Windows()) { std::cout<<"parse hash windows failed"<<std::endl; fails++; }
+    if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
     if(fails==0) {
