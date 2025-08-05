@@ -47,12 +47,6 @@ struct CudaPollardMatch {
 };
 
 #define MAX_OFFSETS 32
-
-struct MatchRecord {
-    uint32_t offset;
-    uint32_t fragment;
-    uint64_t k;
-};
 __device__ static inline uint64_t xorshift128plus(RNGState &state)
 {
     uint64_t x = state.s0;

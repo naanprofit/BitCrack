@@ -65,11 +65,12 @@ public:
     bool reconstruct(size_t target, secp256k1::uint256 &k0,
                      secp256k1::uint256 &modulus);
 
-    // Consume a window result produced by a GPU kernel or converted from a
-    // CPU device.  This function accumulates the constraint, attempts key
-    // reconstruction and, on success, hashes the candidate to verify it
-    // belongs to the supplied target set before invoking the callback.
-    void processWindow(const PollardWindow &w);
+    // Consume a window constraint produced by a device. This function
+    // accumulates the constraint, attempts key reconstruction and, on success,
+    // hashes the candidate to verify it belongs to the supplied target set
+    // before invoking the callback.
+    void processWindow(size_t targetIdx, unsigned int offset,
+                       const Constraint &c);
 
     // Walk routines consume results produced by the configured device.  The
     // overloads with a seed parameter enable deterministic behaviour for

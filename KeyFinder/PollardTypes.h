@@ -1,6 +1,7 @@
 #ifndef POLLARD_TYPES_H
 #define POLLARD_TYPES_H
 #include "secp256k1.h"
+#include <cstdint>
 
 // Hashes within the Pollard engine are stored in little-endian word order so
 // that bit offset 0 corresponds to the least significant bit of the RIPEMD160
@@ -25,5 +26,14 @@ struct PollardWindow {
                                              // little-endian hash160
     unsigned int bits;                       // size of the window in bits
     secp256k1::uint256 scalarFragment;       // full scalar at the match
+};
+
+// Compact record emitted by ``windowKernel`` during key range scans. Each
+// entry captures the window offset, the extracted fragment of the x-coordinate
+// and the corresponding scalar ``k`` where the match occurred.
+struct MatchRecord {
+    uint32_t offset;   // bit offset within the x-coordinate
+    uint32_t fragment; // extracted window fragment
+    uint64_t k;        // scalar at the match
 };
 #endif

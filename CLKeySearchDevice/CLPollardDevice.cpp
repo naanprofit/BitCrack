@@ -246,14 +246,33 @@ void runWalk(PollardEngine &engine,
     clFinish(q);
 
     for(cl_uint i = 0; i < h_count && i < maxOut; ++i) {
-        PollardWindow w;
-        w.targetIdx = h_out[i].targetIdx;
-        w.offset = h_out[i].offset;
-        w.bits = h_out[i].bits;
+        unsigned int offset = h_out[i].offset;
+        unsigned int modBits = offset + h_out[i].bits;
+        secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
-            w.scalarFragment.v[j] = h_out[i].k[j];
+            rem.v[j] = h_out[i].k[j];
         }
-        engine.processWindow(w);
+        if(modBits < 256) {
+            unsigned int word = modBits / 32;
+            unsigned int bit = modBits % 32;
+            if(bit) {
+                unsigned int mask = (1u << bit) - 1u;
+                rem.v[word] &= mask;
+                for(unsigned int k = word + 1; k < 8; ++k) {
+                    rem.v[k] = 0u;
+                }
+            } else {
+                for(unsigned int k = word; k < 8; ++k) {
+                    rem.v[k] = 0u;
+                }
+            }
+        }
+        secp256k1::uint256 mod(0);
+        if(modBits < 256) {
+            mod.v[modBits / 32] = (1u << (modBits % 32));
+        }
+        PollardEngine::Constraint c{mod, rem};
+        engine.processWindow(h_out[i].targetIdx, offset, c);
     }
 
     clReleaseMemObject(d_out);

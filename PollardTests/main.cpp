@@ -792,9 +792,6 @@ bool testCRTMixedOffsetsPython() {
     std::vector<Pair> constraints;
 
     for(size_t i = 0; i < offsets.size(); ++i) {
-        PollardWindow w{0u, offsets[i], sizes[i], key};
-        engine.processWindow(w);
-
         unsigned int modBits = offsets[i] + sizes[i];
         uint256 mod(0);
         if(modBits < 256) {
@@ -812,6 +809,8 @@ bool testCRTMixedOffsetsPython() {
                 for(unsigned int j = word; j < 8; ++j) rem.v[j] = 0u;
             }
         }
+        PollardEngine::Constraint c{mod, rem};
+        engine.processWindow(0, offsets[i], c);
         constraints.push_back({mod, rem});
     }
 
