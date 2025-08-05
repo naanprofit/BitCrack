@@ -303,3 +303,10 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     if(d_windows) cudaFree(d_windows);
     cudaStreamDestroy(stream);
 }
+
+extern "C" bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
+                                    unsigned int bits, unsigned int out[5]) {
+    uint256 v = hashWindowLE(h, offset, bits);
+    v.exportWords(out, 5);
+    return true;
+}

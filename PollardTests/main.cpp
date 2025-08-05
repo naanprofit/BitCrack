@@ -13,11 +13,15 @@
 #if BUILD_CUDA
 #include <cuda_runtime.h>
 bool runCudaScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]);
+bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
+                         unsigned int bits, unsigned int out[5]);
 #endif
 
 #if BUILD_OPENCL
 #include "clutil.h"
 #include "clContext.h"
+bool runCLHashWindowLE(const unsigned int h[5], unsigned int offset,
+                       unsigned int bits, unsigned int out[5]);
 #endif
 
 struct RefMatch {
@@ -423,6 +427,48 @@ bool testGpuScalarOne() {
     return pass;
 }
 
+bool testDeviceHashWindowLE() {
+    const unsigned int be[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    unsigned int le[5];
+    secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
+    struct Case { unsigned int off; unsigned int bits; };
+    std::vector<Case> cases = { {0,80}, {40,80}, {64,32} };
+    bool ran = false;
+    bool pass = true;
+    for(const auto &c : cases) {
+        auto ref = hashWindowLE(le, c.off, c.bits);
+#if BUILD_CUDA
+        unsigned int outCuda[5];
+        if(runCudaHashWindowLE(le, c.off, c.bits, outCuda)) {
+            ran = true;
+            for(int i=0;i<5;i++) {
+                if(outCuda[i] != ref[i]) pass = false;
+            }
+        }
+#endif
+#if BUILD_OPENCL
+        unsigned int outCl[5];
+        if(runCLHashWindowLE(le, c.off, c.bits, outCl)) {
+            ran = true;
+            for(int i=0;i<5;i++) {
+                if(outCl[i] != ref[i]) pass = false;
+            }
+        }
+#endif
+    }
+    if(!ran) {
+        std::cout << "device hashWindowLE test skipped" << std::endl;
+        return true;
+    }
+    return pass;
+}
+
 int main(){
     int fails=0;
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
@@ -430,6 +476,7 @@ int main(){
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(!testPollardHash160FindsKey()) { std::cout<<"pollard hash160 failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
+    if(!testDeviceHashWindowLE()) { std::cout<<"device hash window failed"<<std::endl; fails++; }
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
     if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
     if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
