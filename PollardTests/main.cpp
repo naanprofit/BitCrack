@@ -346,18 +346,68 @@ bool testParseHash160Windows() {
     if(!parseHash160("e2192e8a7dd8dd1c88321959b477968b941aa973", h)) {
         return false;
     }
-    // For this known digest, the least-significant byte is 0x73.  Verify that
-    // window extraction on the little-endian representation returns the
-    // expected bytes at a few offsets.
-    unsigned int offsets[4] = {0,20,40,60};
-    unsigned int expected[4] = {0x73, 0x41, 0x96, 0x9b};
-    for(int i = 0; i < 4; ++i) {
-        auto got = hashWindowLE(h.data(), offsets[i], 8);
-        if(got[0] != expected[i]) {
-            return false;
+
+    struct Case {
+        unsigned int off;
+        unsigned int bits;
+        std::array<unsigned int,5> expected;
+    };
+
+    const char *cmd =
+        "python3 - <<'PY'\n"
+        "h=bytes.fromhex('e2192e8a7dd8dd1c88321959b477968b941aa973')\n"
+        "w=[int.from_bytes(h[::-1][i*4:(i+1)*4],'little') for i in range(5)]\n"
+        "def hw(words,off,bits):\n"
+        "  word=off//32\n"
+        "  bit=off%32\n"
+        "  num=(bits+31)//32\n"
+        "  out=[0]*num\n"
+        "  for i in range(num):\n"
+        "    if word+i<5:\n"
+        "      val=(words[word+i]>>bit)&0xffffffff\n"
+        "      if bit and word+i+1<5:\n"
+        "        val|=(words[word+i+1]<<(32-bit))&0xffffffff\n"
+        "      out[i]=val\n"
+        "  maskbits=bits%32\n"
+        "  if maskbits:\n"
+        "    out[-1]&=(1<<maskbits)-1\n"
+        "  return out\n"
+        "bits=[1,8,20,40]\n"
+        "offs=[0,20,40,60]\n"
+        "for b in bits:\n"
+        "  for off in offs:\n"
+        "    out=hw(w,off,b)\n"
+        "    print(off,b,' '.join(hex(x) for x in out))\n"
+        "PY";
+    FILE *pipe = popen(cmd, "r");
+    if(!pipe) return false;
+    std::vector<Case> cases;
+    char buffer[128];
+    while(fgets(buffer, sizeof(buffer), pipe)) {
+        std::stringstream ss(buffer);
+        Case c; c.expected.fill(0u);
+        ss >> c.off >> c.bits;
+        std::string token; unsigned int idx = 0;
+        while(ss >> token && idx < 5) {
+            if(token.rfind("0x",0)==0) token = token.substr(2);
+            unsigned long long val = 0;
+            std::stringstream ts; ts << std::hex << token; ts >> val;
+            c.expected[idx++] = static_cast<unsigned int>(val & 0xffffffffULL);
         }
-        for(int j = 1; j < 5; ++j) {
-            if(got[j] != 0u) {
+        cases.push_back(c);
+    }
+    pclose(pipe);
+
+    for(const auto &c : cases) {
+        auto got = hashWindowLE(h.data(), c.off, c.bits);
+        unsigned int words = (c.bits + 31) / 32;
+        for(unsigned int i = 0; i < words; ++i) {
+            if(got[i] != c.expected[i]) {
+                return false;
+            }
+        }
+        for(unsigned int i = words; i < 5; ++i) {
+            if(got[i] != 0u) {
                 return false;
             }
         }
