@@ -152,6 +152,84 @@ def worker(args):
     return found
 
 
+def run_round(args, L, U, ws, offsets, mask, max_steps, n, n_tame, n_wild,
+              target, chunk):
+    constraints = {}
+
+    while len(constraints) < len(offsets):
+        jobs = []
+
+        # tame jobs
+        if args.full or args.tames:
+            for _ in range(n_tame):
+                st = random.randint(L, U)
+                en = min(st + max_steps - 1, U)
+                jobs.append((target, ws, offsets, mask, st, en,
+                             max_steps, 'tame', args.verbose))
+        else:
+            for i in range(n_tame):
+                st = L + i*chunk
+                en = min(L + (i+1)*chunk - 1, U)
+                jobs.append((target, ws, offsets, mask, st, en,
+                             max_steps, 'tame', args.verbose))
+
+        # wild jobs
+        if args.full:
+            for _ in range(n_wild):
+                en = random.randint(L, U)
+                st = max(L, en - max_steps + 1)
+                jobs.append((target, ws, offsets, mask, st, en,
+                             max_steps, 'wild', args.verbose))
+        else:
+            for j in range(n_wild):
+                en = U - j*chunk
+                st = max(L, en - chunk + 1)
+                jobs.append((target, ws, offsets, mask, st, en,
+                             max_steps, 'wild', args.verbose))
+
+        pool = Pool(n)
+        try:
+            for res in pool.imap_unordered(worker, jobs):
+                for off, lo in res.items():
+                    if args.full or off not in constraints:
+                        constraints[off] = lo
+                        if args.verbose:
+                            print(f"[MAIN] collected off={off} -> {lo}")
+                if len(constraints) == len(offsets):
+                    break
+        finally:
+            pool.close()
+            pool.join()
+
+        if len(constraints) < len(offsets):
+            if args.full:
+                continue
+            print(f"[ERROR] only {len(constraints)}/{len(offsets)} offsets found")
+            sys.exit(1)
+
+    conlist = [
+        (1 << (off + ws),
+         (lo << off) & ((1 << (off + ws)) - 1))
+        for off, lo in constraints.items()
+    ]
+    k0, Mval = crt(conlist)
+    print(f"CRT k≡{k0} mod {Mval}")
+
+    cands = enumerate_candidates(k0, Mval, L, U)
+    print(f"candidates: {len(cands)}")
+
+    for k in cands:
+        h = privatekey_to_h160(k)
+        print(f"test {k} -> {h}")
+        if h.lower() == args.target_rmd.lower():
+            print("FOUND key:", k)
+            with open('KEYFOUND.TXT','a') as f:
+                f.write(f"{k}\n")
+            return True
+
+    return False
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--backend', choices=['ecdsa','ice'], default='ecdsa',
@@ -223,85 +301,10 @@ def main():
     target = int.from_bytes(bytes.fromhex(args.target_rmd), 'little')
     chunk  = span // n
 
-    def run_round():
-        constraints = {}
-
-        while len(constraints) < len(offsets):
-            jobs = []
-
-            # tame jobs
-            if args.full or args.tames:
-                for _ in range(n_tame):
-                    st = random.randint(L, U)
-                    en = min(st + max_steps - 1, U)
-                    jobs.append((target, ws, offsets, mask, st, en,
-                                 max_steps, 'tame', args.verbose))
-            else:
-                for i in range(n_tame):
-                    st = L + i*chunk
-                    en = min(L + (i+1)*chunk - 1, U)
-                    jobs.append((target, ws, offsets, mask, st, en,
-                                 max_steps, 'tame', args.verbose))
-
-            # wild jobs
-            if args.full:
-                for _ in range(n_wild):
-                    en = random.randint(L, U)
-                    st = max(L, en - max_steps + 1)
-                    jobs.append((target, ws, offsets, mask, st, en,
-                                 max_steps, 'wild', args.verbose))
-            else:
-                for j in range(n_wild):
-                    en = U - j*chunk
-                    st = max(L, en - chunk + 1)
-                    jobs.append((target, ws, offsets, mask, st, en,
-                                 max_steps, 'wild', args.verbose))
-
-            pool = Pool(n)
-            try:
-                for res in pool.imap_unordered(worker, jobs):
-                    for off, lo in res.items():
-                        if args.full or off not in constraints:
-                            constraints[off] = lo
-                            if args.verbose:
-                                print(f"[MAIN] collected off={off} -> {lo}")
-                    if len(constraints) == len(offsets):
-                        break
-            finally:
-                pool.close()
-                pool.join()
-
-            if len(constraints) < len(offsets):
-                if args.full:
-                    continue
-                print(f"[ERROR] only {len(constraints)}/{len(offsets)} offsets found")
-                sys.exit(1)
-
-        conlist = [
-            (1 << (off + ws),
-             (lo << off) & ((1 << (off + ws)) - 1))
-            for off, lo in constraints.items()
-        ]
-        k0, Mval = crt(conlist)
-        print(f"CRT k≡{k0} mod {Mval}")
-
-        cands = enumerate_candidates(k0, Mval, L, U)
-        print(f"candidates: {len(cands)}")
-
-        for k in cands:
-            h = privatekey_to_h160(k)
-            print(f"test {k} -> {h}")
-            if h.lower() == args.target_rmd.lower():
-                print("FOUND key:", k)
-                with open('KEYFOUND.TXT','a') as f:
-                    f.write(f"{k}\n")
-                return True
-
-        return False
-
     try:
         while True:
-            if run_round():
+            if run_round(args, L, U, ws, offsets, mask, max_steps, n,
+                         n_tame, n_wild, target, chunk):
                 break
             if not args.full:
                 print("no key found")
