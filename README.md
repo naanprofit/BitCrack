@@ -72,7 +72,10 @@ Options:
     Save/load progress from FILE
 
   --hash160 <40-hex-chars>
-      Add a target specified as a 40-hex-character RIPEMD160 hash
+      Add a target specified as a 40-hex-character RIPEMD160 hash in
+      big-endian form. The program stores hashes internally in a
+      little-endian layout, so supply the standard big-endian digest
+      when using this option.
 ```
 
 #### Examples
