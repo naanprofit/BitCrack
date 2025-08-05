@@ -306,6 +306,8 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
 extern "C" bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
                                     unsigned int bits, unsigned int out[5]) {
+    // Lightweight wrapper used by unit tests to validate the CUDA window
+    // extraction logic.
     uint256 v = hashWindowLE(h, offset, bits);
     v.exportWords(out, 5);
     return true;

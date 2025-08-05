@@ -512,35 +512,54 @@ bool testDeviceHashWindowLE() {
     };
     unsigned int le[5];
     secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
-    struct Case { unsigned int off; unsigned int bits; };
-    std::vector<Case> cases = { {0,80}, {40,80}, {64,32} };
+
+    std::vector<unsigned int> offsets = {0u, 20u, 40u, 60u, 80u, 120u};
+    std::vector<unsigned int> sizes   = {8u, 20u, 32u, 40u, 80u};
+
     bool ran = false;
     bool pass = true;
-    for(const auto &c : cases) {
-        auto ref = hashWindowLE(le, c.off, c.bits);
-#if BUILD_CUDA
-        unsigned int outCuda[5];
-        if(runCudaHashWindowLE(le, c.off, c.bits, outCuda)) {
-            ran = true;
-            for(int i=0;i<5;i++) {
-                if(outCuda[i] != ref[i]) pass = false;
+
+    for(unsigned int off : offsets) {
+        for(unsigned int bits : sizes) {
+            if(off + bits > 160u) {
+                continue;
             }
-        }
+            auto ref = hashWindowLE(le, off, bits);
+#if BUILD_CUDA
+            unsigned int outCuda[5];
+            if(runCudaHashWindowLE(le, off, bits, outCuda)) {
+                ran = true;
+                for(int i = 0; i < 5; ++i) {
+                    if(outCuda[i] != ref[i]) {
+                        pass = false;
+                        break;
+                    }
+                }
+            }
 #endif
 #if BUILD_OPENCL
-        unsigned int outCl[5];
-        if(runCLHashWindowLE(le, c.off, c.bits, outCl)) {
-            ran = true;
-            for(int i=0;i<5;i++) {
-                if(outCl[i] != ref[i]) pass = false;
+            unsigned int outCl[5];
+            if(runCLHashWindowLE(le, off, bits, outCl)) {
+                ran = true;
+                for(int i = 0; i < 5; ++i) {
+                    if(outCl[i] != ref[i]) {
+                        pass = false;
+                        break;
+                    }
+                }
+            }
+#endif
+            if(!pass) {
+                return false;
             }
         }
-#endif
     }
+
     if(!ran) {
         std::cout << "device hashWindowLE test skipped" << std::endl;
         return true;
     }
+
     return pass;
 }
 
