@@ -279,7 +279,7 @@ void usage()
     printf("--poll-batch N        Windows processed per poll (default 1024)\n");
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
     printf("--full                 Process entire keyspace\n");
-    printf("--deterministic       Use sequential deterministic walks\n");
+    printf("--deterministic       Use sequential deterministic walks (still uses GPU kernels)\n");
     printf("--debug               Enable verbose Pollard debugging\n");
     printf("\nAt least one target must be specified via an address, --hash160, or --pubkey.\n");
 }
@@ -825,8 +825,7 @@ int main(int argc, char **argv)
         _devices = DeviceManager::getDevices();
 
         if(_devices.size() == 0) {
-            Logger::log(LogLevel::Error, "No devices available");
-            return 1;
+            Logger::log(LogLevel::Warning, "No devices available");
         }
     } catch(DeviceManager::DeviceManagerException ex) {
         Logger::log(LogLevel::Error, "Error detecting devices: " + ex.msg);
@@ -1054,6 +1053,18 @@ int main(int argc, char **argv)
         Logger::log(LogLevel::Error, "Invalid argument: L must be <= U");
         return 1;
     }
+
+#if !(defined(BUILD_CUDA) || defined(BUILD_OPENCL))
+    if(_config.deterministic) {
+        Logger::log(LogLevel::Warning,
+                    "--deterministic requested but no GPU support is available");
+    }
+#else
+    if(_config.deterministic && _devices.size() == 0) {
+        Logger::log(LogLevel::Warning,
+                    "--deterministic requested but no GPU device was detected");
+    }
+#endif
 
 #if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
     if(listDevices) {

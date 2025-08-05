@@ -136,6 +136,7 @@ or `make cpu`. The feature is enabled with the following options:
 --wilds N              Steps for wild kangaroo walks (0 disables)
 --poll-batch N        Windows processed per poll (default 1024)
 --poll-interval MS    Polling interval in milliseconds (default 100)
+--deterministic       Perform a sequential walk (still relies on GPU kernels)
 --debug               Log scalar, point coordinates, and hash for each attempt
 ```
 
@@ -143,8 +144,9 @@ Target addresses are decoded to RIPEMD160 hashes in little-endian order.
 Bit offsets therefore start at the least significant bit of the digest.
 
 The union of all windows must cover 256 bits for a full reconstruction.
-Tame and wild walks run purely on the CPU and are currently best suited for
-small demonstrations or research.
+Tame and wild walks normally run purely on the CPU and are currently best
+suited for small demonstrations or research.  Using `--deterministic` switches
+the walk to a sequential scan that still relies on GPU kernels when available.
 
 Minimal example:
 
