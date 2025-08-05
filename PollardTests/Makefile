@@ -31,7 +31,8 @@ all: $(OBJS)
 ;cp pollardtests.bin $(BINDIR)/pollardtests
 
 cuda_scalar_one.o: cuda_scalar_one.cu
-;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${NVCCFLAGS} \
+    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
 ;rm -f pollardtests.bin cuda_scalar_one.o
