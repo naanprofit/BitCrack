@@ -2,18 +2,11 @@
 #include <cuda_runtime.h>
 #include <vector>
 #include <cstring>
-#include <cstdint>
 #include <unordered_set>
 #include <algorithm>
 
 
 using namespace secp256k1;
-
-struct MatchRecord {
-    uint32_t offset;
-    uint32_t fragment;
-    uint64_t k;
-};
 
 extern "C" void launchWindowKernel(dim3 gridDim,
                                     dim3 blockDim,
@@ -174,14 +167,33 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
-        PollardWindow w;
-        w.targetIdx = h_out[i].targetIdx;
-        w.offset = h_out[i].offset;
-        w.bits = h_out[i].bits;
+        unsigned int offset = h_out[i].offset;
+        unsigned int modBits = offset + h_out[i].bits;
+        secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
-            w.scalarFragment.v[j] = h_out[i].k[j];
+            rem.v[j] = h_out[i].k[j];
         }
-        _engine.processWindow(w);
+        if(modBits < 256) {
+            unsigned int word = modBits / 32;
+            unsigned int bit = modBits % 32;
+            if(bit) {
+                unsigned int mask = (1u << bit) - 1u;
+                rem.v[word] &= mask;
+                for(unsigned int k = word + 1; k < 8; ++k) {
+                    rem.v[k] = 0u;
+                }
+            } else {
+                for(unsigned int k = word; k < 8; ++k) {
+                    rem.v[k] = 0u;
+                }
+            }
+        }
+        secp256k1::uint256 mod(0);
+        if(modBits < 256) {
+            mod.v[modBits / 32] = (1u << (modBits % 32));
+        }
+        PollardEngine::Constraint c{mod, rem};
+        _engine.processWindow(h_out[i].targetIdx, offset, c);
     }
 
     cudaFree(d_out);
@@ -303,14 +315,33 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
-        PollardWindow w;
-        w.targetIdx = h_out[i].targetIdx;
-        w.offset = h_out[i].offset;
-        w.bits = h_out[i].bits;
+        unsigned int offset = h_out[i].offset;
+        unsigned int modBits = offset + h_out[i].bits;
+        secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
-            w.scalarFragment.v[j] = h_out[i].k[j];
+            rem.v[j] = h_out[i].k[j];
         }
-        _engine.processWindow(w);
+        if(modBits < 256) {
+            unsigned int word = modBits / 32;
+            unsigned int bit = modBits % 32;
+            if(bit) {
+                unsigned int mask = (1u << bit) - 1u;
+                rem.v[word] &= mask;
+                for(unsigned int k = word + 1; k < 8; ++k) {
+                    rem.v[k] = 0u;
+                }
+            } else {
+                for(unsigned int k = word; k < 8; ++k) {
+                    rem.v[k] = 0u;
+                }
+            }
+        }
+        secp256k1::uint256 mod(0);
+        if(modBits < 256) {
+            mod.v[modBits / 32] = (1u << (modBits % 32));
+        }
+        PollardEngine::Constraint c{mod, rem};
+        _engine.processWindow(h_out[i].targetIdx, offset, c);
     }
 
     cudaFree(d_out);
@@ -388,14 +419,10 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
             if(modBits < 256) {
                 mod.v[modBits / 32] = (1u << (modBits % 32));
             }
-            outConstraints.push_back({mod, rem});
+            PollardEngine::Constraint c{mod, rem};
+            outConstraints.push_back(c);
 
-            PollardWindow w;
-            w.targetIdx = 0;
-            w.offset = r.offset;
-            w.bits = windowBits;
-            w.scalarFragment = rem;
-            _engine.processWindow(w);
+            _engine.processWindow(0, r.offset, c);
         }
     }
 

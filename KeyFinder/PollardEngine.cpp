@@ -304,12 +304,15 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                     continue;
                 }
                 uint256 mask = maskBits(modBits);
-                uint256 full;
+                uint256 rem;
                 for(int w = 0; w < 8; ++w) {
-                    full.v[w] = m.scalar.v[w] & mask.v[w];
+                    rem.v[w] = m.scalar.v[w] & mask.v[w];
                 }
-                PollardWindow w{static_cast<unsigned int>(t), off, _windowBits, full};
-                processWindow(w);
+                uint256 mod(0);
+                if(modBits < 256) {
+                    mod.v[modBits / 32] = (1u << (modBits % 32));
+                }
+                processWindow(t, off, {mod, rem});
             }
         }
     }
@@ -411,56 +414,36 @@ bool PollardEngine::checkPoint(const ecpoint &p) {
     return (p.x.v[0] & mask) == 0;
 }
 
-void PollardEngine::processWindow(const PollardWindow &w) {
+void PollardEngine::processWindow(size_t targetIdx, unsigned int offset,
+                                  const Constraint &c) {
     _windowsProcessed++;
-    if(w.targetIdx >= _targets.size()) {
+    if(targetIdx >= _targets.size()) {
         return;
     }
-    if(_targets[w.targetIdx].seenOffsets.count(w.offset)) {
+    if(_targets[targetIdx].seenOffsets.count(offset)) {
         return;
     }
 
     if(_debug) {
         Logger::log(LogLevel::Debug,
-                    "Window target=" + util::format(w.targetIdx) +
-                    " offset=" + util::format(w.offset) +
-                    " bits=" + util::format(w.bits) +
-                    " fragment=" + secp256k1::uint256(w.scalarFragment).toString(16));
+                    "Window target=" + util::format(targetIdx) +
+                    " offset=" + util::format(offset) +
+                    " modulus=" + secp256k1::uint256(c.modulus).toString(16) +
+                    " value=" + secp256k1::uint256(c.value).toString(16));
     }
 
-    unsigned int modBits = w.offset + w.bits;
+    unsigned int modBits = offset + _windowBits;
     if(modBits > 256) {
         return;
     }
 
-    uint256 val = w.scalarFragment;
-    if(modBits < 256) {
-        unsigned int word = modBits / 32;
-        unsigned int bit = modBits % 32;
-        if(bit) {
-            unsigned int mask = (1u << bit) - 1u;
-            val.v[word] &= mask;
-            for(unsigned int i = word + 1; i < 8; ++i) {
-                val.v[i] = 0u;
-            }
-        } else {
-            for(unsigned int i = word; i < 8; ++i) {
-                val.v[i] = 0u;
-            }
-        }
-    }
-
-    uint256 mod(0);
-    if(modBits < 256) {
-        mod.v[modBits / 32] = (1u << (modBits % 32));
-    }
-    addConstraint(w.targetIdx, mod, val);
-    _targets[w.targetIdx].seenOffsets.insert(w.offset);
+    addConstraint(targetIdx, c.modulus, c.value);
+    _targets[targetIdx].seenOffsets.insert(offset);
 
     _reconstructionAttempts++;
     uint256 k0;
     uint256 modulus;
-    if(reconstruct(w.targetIdx, k0, modulus)) {
+    if(reconstruct(targetIdx, k0, modulus)) {
         enumerateCandidates(k0, modulus, _L, _U);
     }
 
