@@ -29,8 +29,7 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
     uint256 out(0);
     uint32_t word = offset / 32;
     uint32_t bit = offset % 32;
-    uint32_t span = bit + bits;
-    uint32_t words = (span + 31) / 32;
+    uint32_t words = (bits + 31) / 32;
     for(uint32_t i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -38,8 +37,9 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
         }
         out.v[i] = static_cast<uint32_t>(val & 0xffffffffULL);
     }
-    if(span % 32) {
-        uint32_t mask = (1u << (span % 32)) - 1u;
+    uint32_t maskBits = bits % 32;
+    if(maskBits) {
+        uint32_t mask = (1u << maskBits) - 1u;
         out.v[words - 1] &= mask;
     }
     for(uint32_t i = words; i < 8; ++i) {
