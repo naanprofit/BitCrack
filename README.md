@@ -28,7 +28,7 @@ Options:
     Read addresses from FILE, one address per line. If FILE is "-" then stdin is read
 
 -o, --out FILE
-    Append private keys to FILE, one per line
+    Append private keys to FILE, one per line (default: found.txt). Use this option to override the default output file
 
 -d, --device N
     Use device with ID equal to N

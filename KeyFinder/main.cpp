@@ -99,35 +99,35 @@ void resultCallback(KeySearchResult info)
 {
         _resultFound = true;
 
-        if(_config.resultsFile.length() != 0) {
-                Logger::log(LogLevel::Info, "Found key for address '" + info.address + "'. Written to '" + _config.resultsFile + "'");
+        std::string outFile = _config.resultsFile.length() != 0 ? _config.resultsFile : "found.txt";
 
-                std::string s = info.address + " " + info.privateKey.toString(16) + " " + info.publicKey.toString(info.compressed);
-                util::appendToFile(_config.resultsFile, s);
+        Logger::log(LogLevel::Info, "Found key for address '" + info.address + "'. Written to '" + outFile + "'");
 
-                return;
+        std::string s = info.address + " " + info.privateKey.toString(16) + " " + info.publicKey.toString(info.compressed);
+        util::appendToFile(outFile, s);
+
+        if(_config.resultsFile.length() == 0) {
+                std::string logStr = "Address:     " + info.address + "\n";
+                logStr += "Private key: " + info.privateKey.toString(16) + "\n";
+                logStr += "Compressed:  ";
+
+                if(info.compressed) {
+                        logStr += "yes\n";
+                } else {
+                        logStr += "no\n";
+                }
+
+                logStr += "Public key:  \n";
+
+                if(info.compressed) {
+                        logStr += info.publicKey.toString(true) + "\n";
+                } else {
+                        logStr += info.publicKey.x.toString(16) + "\n";
+                        logStr += info.publicKey.y.toString(16) + "\n";
+                }
+
+                Logger::log(LogLevel::Info, logStr);
         }
-
-	std::string logStr = "Address:     " + info.address + "\n";
-	logStr += "Private key: " + info.privateKey.toString(16) + "\n";
-	logStr += "Compressed:  ";
-
-	if(info.compressed) {
-		logStr += "yes\n";
-	} else {
-		logStr += "no\n";
-	}
-
-	logStr += "Public key:  \n";
-
-	if(info.compressed) {
-		logStr += info.publicKey.toString(true) + "\n";
-	} else {
-		logStr += info.publicKey.x.toString(16) + "\n";
-		logStr += info.publicKey.y.toString(16) + "\n";
-	}
-
-	Logger::log(LogLevel::Info, logStr);
 }
 
 /**
@@ -229,7 +229,7 @@ void usage()
     printf("-t, --threads N         N threads per block\n");
     printf("-p, --points N          N points per thread\n");
     printf("-i, --in FILE           Read addresses from FILE, one per line\n");
-    printf("-o, --out FILE          Write keys to FILE\n");
+    printf("-o, --out FILE          Write keys to FILE (default: found.txt)\n");
     printf("-f, --follow            Follow text output\n");
     printf("--list-devices          List available devices\n");
     printf("--keyspace KEYSPACE     Specify the keyspace:\n");
