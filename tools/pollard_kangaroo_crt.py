@@ -11,6 +11,9 @@ The script supports two backends:
   * ``ecdsa`` – pure Python implementation using ``python-ecdsa`` (default)
   * ``ice``   – bindings to the secp256k1 C implementation used by BitCrack
 
+Bit offsets are counted from the least-significant bit (LSB=0), matching the
+ordering used by the C++ Pollard implementation.
+
 Example usage::
 
     python3 tools/pollard_kangaroo_crt.py \
@@ -120,10 +123,7 @@ def worker(args):
 
     # precompute the bits we want to match (offsets are measured from the
     # least-significant bit, consistent with the C++ Pollard engine):
-    want = {
-        off: (target >> off) & (mask - 1)
-        for off in offsets
-    }
+    want = {off: (target >> off) & mask for off in offsets}
     found = {}
     span = U_i - L_i + 1
     steps = min(max_steps, span)
@@ -141,8 +141,8 @@ def worker(args):
         for off, w in want.items():
             if off in found:
                 continue
-            if ((val >> off) & (mask - 1)) == w:
-                found[off] = (a >> off) & (mask - 1)
+            if ((val >> off) & mask) == w:
+                found[off] = (a >> off) & mask
                 if verbose:
                     print(f"[{name}] matched off={off} -> {found[off]}")
 
@@ -160,7 +160,8 @@ def main():
     p.add_argument('--L',            type=int, required=True)
     p.add_argument('--U',            type=int, required=True)
     p.add_argument('--offsets_count',type=int, default=4)
-    p.add_argument('--offsets',      type=str)
+    p.add_argument('--offsets',      type=str,
+                   help="Comma-separated bit offsets (LSB=0)")
     p.add_argument('--window_size',  type=int)
     p.add_argument('--max_steps',    type=int)
     p.add_argument('--workers',      type=int, default=4)
@@ -196,7 +197,7 @@ def main():
         math.ceil(bits/args.offsets_count),
         160//args.offsets_count
     ))
-    mask = 1 << ws
+    mask = (1 << ws) - 1
 
     if args.offsets:
         offsets = list(map(int, args.offsets.split(',')))
