@@ -4,6 +4,7 @@
 #include <cstring>
 #include <unordered_set>
 #include <algorithm>
+#include <stdexcept>
 
 
 using namespace secp256k1;
@@ -81,9 +82,11 @@ CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      unsigned int windowBits,
                                      const std::vector<unsigned int> &offsets,
                                      const std::vector<std::array<uint32_t,5>> &targets,
-                                     bool debug)
+                                     bool debug,
+                                     unsigned int gridDim,
+                                     unsigned int blockDim)
     : _engine(engine), _windowBits(windowBits), _offsets(offsets),
-      _targets(targets), _debug(debug) {}
+      _targets(targets), _debug(debug), _gridDim(gridDim), _blockDim(blockDim) {}
 
 void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
                                       const uint256 &seed, bool sequential) {
@@ -92,11 +95,30 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     int dev = 0;
     cudaGetDevice(&dev);
     cudaGetDeviceProperties(&prop, dev);
-    unsigned int threadsPerBlock = prop.warpSize * 4;
-    if(threadsPerBlock > prop.maxThreadsPerBlock) {
-        threadsPerBlock = prop.maxThreadsPerBlock;
+
+    unsigned int threadsPerBlock;
+    if(_blockDim) {
+        if(_blockDim % prop.warpSize != 0 || _blockDim > (unsigned)prop.maxThreadsPerBlock) {
+            throw std::runtime_error("invalid blockDim");
+        }
+        threadsPerBlock = _blockDim;
+    } else {
+        threadsPerBlock = prop.warpSize * 4;
+        if(threadsPerBlock > (unsigned)prop.maxThreadsPerBlock) {
+            threadsPerBlock = prop.maxThreadsPerBlock;
+        }
     }
-    unsigned int blocks = prop.multiProcessorCount;
+
+    unsigned int blocks;
+    if(_gridDim) {
+        if(_gridDim > (unsigned)prop.maxGridSize[0]) {
+            throw std::runtime_error("invalid gridDim");
+        }
+        blocks = _gridDim;
+    } else {
+        blocks = prop.multiProcessorCount;
+    }
+
     unsigned int totalThreads = threadsPerBlock * blocks;
 
     // Build per-thread 256-bit seeds and starting scalars using the ``start`` value
@@ -212,11 +234,30 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     int dev = 0;
     cudaGetDevice(&dev);
     cudaGetDeviceProperties(&prop, dev);
-    unsigned int threadsPerBlock = prop.warpSize * 4;
-    if(threadsPerBlock > prop.maxThreadsPerBlock) {
-        threadsPerBlock = prop.maxThreadsPerBlock;
+
+    unsigned int threadsPerBlock;
+    if(_blockDim) {
+        if(_blockDim % prop.warpSize != 0 || _blockDim > (unsigned)prop.maxThreadsPerBlock) {
+            throw std::runtime_error("invalid blockDim");
+        }
+        threadsPerBlock = _blockDim;
+    } else {
+        threadsPerBlock = prop.warpSize * 4;
+        if(threadsPerBlock > (unsigned)prop.maxThreadsPerBlock) {
+            threadsPerBlock = prop.maxThreadsPerBlock;
+        }
     }
-    unsigned int blocks = prop.multiProcessorCount;
+
+    unsigned int blocks;
+    if(_gridDim) {
+        if(_gridDim > (unsigned)prop.maxGridSize[0]) {
+            throw std::runtime_error("invalid gridDim");
+        }
+        blocks = _gridDim;
+    } else {
+        blocks = prop.multiProcessorCount;
+    }
+
     unsigned int totalThreads = threadsPerBlock * blocks;
 
     // Prepare per-thread 256-bit seeds, starting scalars and points
@@ -382,11 +423,41 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     std::vector<MatchRecord> hostOut(1024);
     std::unordered_set<uint32_t> seen;
 
+    cudaDeviceProp prop;
+    int dev = 0;
+    cudaGetDevice(&dev);
+    cudaGetDeviceProperties(&prop, dev);
+
+    unsigned int blockSize;
+    if(_blockDim) {
+        if(_blockDim % prop.warpSize != 0 || _blockDim > (unsigned)prop.maxThreadsPerBlock) {
+            throw std::runtime_error("invalid blockDim");
+        }
+        blockSize = _blockDim;
+    } else {
+        blockSize = prop.warpSize * 8;
+        if(blockSize > (unsigned)prop.maxThreadsPerBlock) {
+            blockSize = prop.maxThreadsPerBlock;
+        }
+    }
+
     uint64_t chunk = (1ULL << 32);
     for(uint64_t chunkStart = start_k; chunkStart < end_k && seen.size() < offsetsCount; chunkStart += chunk) {
         uint64_t range = std::min(chunk, end_k - chunkStart);
-        dim3 block(256);
-        dim3 grid((range + block.x - 1) / block.x);
+        dim3 block(blockSize);
+        unsigned int gridSize;
+        if(_gridDim) {
+            if(_gridDim > (unsigned)prop.maxGridSize[0]) {
+                throw std::runtime_error("invalid gridDim");
+            }
+            gridSize = _gridDim;
+        } else {
+            gridSize = (range + block.x - 1) / block.x;
+            if(gridSize > (unsigned)prop.maxGridSize[0]) {
+                gridSize = prop.maxGridSize[0];
+            }
+        }
+        dim3 grid(gridSize);
 
         cudaMemset(d_count, 0, sizeof(uint32_t));
         launchWindowKernel(grid, block, chunkStart, range, windowBits,
