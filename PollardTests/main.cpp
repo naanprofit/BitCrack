@@ -332,18 +332,32 @@ public:
     }
 };
 
-bool testPollardHash160FindsKey() {
+// Verify that varying window sizes are handled correctly by PollardEngine.
+// Uses a stub device to emit a single match for the scalar 1 and ensures
+// reconstruction succeeds for window sizes 1, 8, and 10.
+bool testPollardWindowSizes() {
     unsigned int words[5];
     Base58::toHash160("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH", words);
     std::array<unsigned int,5> target{};
     for(int i = 0; i < 5; ++i) target[i] = words[i];
-    bool found = false;
-    PollardEngine engine([&](KeySearchResult r){ if(r.privateKey == secp256k1::uint256(1)) found = true; },
-                         8, std::vector<unsigned int>{0}, std::vector<std::array<unsigned int,5>>{target},
-                         secp256k1::uint256(1), secp256k1::uint256(0xFF), 1, 100, true, false);
-    engine.setDevice(std::unique_ptr<PollardDevice>(new StubDevice()));
-    engine.runTameWalk(secp256k1::uint256(1), 1);
-    return found;
+    for(unsigned int w : {1u, 8u, 10u}) {
+        bool found = false;
+        PollardEngine engine(
+            [&](KeySearchResult r){ if(r.privateKey == secp256k1::uint256(1)) found = true; },
+            w,
+            std::vector<unsigned int>{0},
+            std::vector<std::array<unsigned int,5>>{target},
+            secp256k1::uint256(1),
+            secp256k1::uint256(0xFF),
+            1,
+            100,
+            true,
+            false);
+        engine.setDevice(std::unique_ptr<PollardDevice>(new StubDevice()));
+        engine.runTameWalk(secp256k1::uint256(1), 1);
+        if(!found) return false;
+    }
+    return true;
 }
 
 static bool runOpenCLScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]) {
@@ -474,7 +488,7 @@ int main(){
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
-    if(!testPollardHash160FindsKey()) { std::cout<<"pollard hash160 failed"<<std::endl; fails++; }
+    if(!testPollardWindowSizes()) { std::cout<<"pollard window sizes failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
     if(!testDeviceHashWindowLE()) { std::cout<<"device hash window failed"<<std::endl; fails++; }
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
