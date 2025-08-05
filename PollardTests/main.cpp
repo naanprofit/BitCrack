@@ -513,17 +513,9 @@ bool testDeviceHashWindowLE() {
     unsigned int le[5];
     secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
 
-    std::vector<unsigned int> offsets = {0u, 20u, 40u, 60u, 80u, 120u};
-    std::vector<unsigned int> sizes   = {8u, 20u, 32u, 40u, 80u};
-
     bool ran = false;
-    bool pass = true;
-
-    for(unsigned int off : offsets) {
-        for(unsigned int bits : sizes) {
-            if(off + bits > 160u) {
-                continue;
-            }
+    for(unsigned int off = 0; off < 160u; ++off) {
+        for(unsigned int bits = 1; bits <= 160u - off; ++bits) {
             auto ref = hashWindowLE(le, off, bits);
 #if BUILD_CUDA
             unsigned int outCuda[5];
@@ -531,8 +523,7 @@ bool testDeviceHashWindowLE() {
                 ran = true;
                 for(int i = 0; i < 5; ++i) {
                     if(outCuda[i] != ref[i]) {
-                        pass = false;
-                        break;
+                        return false;
                     }
                 }
             }
@@ -543,24 +534,19 @@ bool testDeviceHashWindowLE() {
                 ran = true;
                 for(int i = 0; i < 5; ++i) {
                     if(outCl[i] != ref[i]) {
-                        pass = false;
-                        break;
+                        return false;
                     }
                 }
             }
 #endif
-            if(!pass) {
-                return false;
-            }
         }
     }
 
     if(!ran) {
         std::cout << "device hashWindowLE test skipped" << std::endl;
-        return true;
     }
 
-    return pass;
+    return true;
 }
 
 int main(){
