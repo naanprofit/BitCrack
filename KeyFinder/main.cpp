@@ -7,6 +7,7 @@
 #include <cctype>
 #include <algorithm>
 #include <map>
+#include <iomanip>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -266,6 +267,9 @@ void usage()
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
     printf("--hash160 HEX          Add a target specified as a 40-hex-character RIPEMD160 hash\n");
+    printf("                        Hashes must be big-endian; internally the digest is stored\n");
+    printf("                        as little-endian words. Provide the standard big-endian\n");
+    printf("                        representation when using this option.\n");
     printf("--pubkey HEX           Add a target specified as a 33- or 65-byte public key in hex\n");
     printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
     printf("--offsets LIST         Comma-separated bit offsets for CRT windows (required)\n");
@@ -724,6 +728,29 @@ bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
                   (static_cast<unsigned int>(bytes[i * 4 + 1]) << 8) |
                   (static_cast<unsigned int>(bytes[i * 4 + 2]) << 16) |
                   (static_cast<unsigned int>(bytes[i * 4 + 3]) << 24);
+    }
+
+    // Reconstruct the big-endian hex string from the internal representation
+    // to ensure the input was provided as a big-endian digest.
+    std::array<unsigned char,20> verify;
+    for(int i = 0; i < 5; ++i) {
+        verify[i * 4]     = static_cast<unsigned char>(hash[i] & 0xFF);
+        verify[i * 4 + 1] = static_cast<unsigned char>((hash[i] >> 8) & 0xFF);
+        verify[i * 4 + 2] = static_cast<unsigned char>((hash[i] >> 16) & 0xFF);
+        verify[i * 4 + 3] = static_cast<unsigned char>((hash[i] >> 24) & 0xFF);
+    }
+    std::reverse(verify.begin(), verify.end());
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for(unsigned char b : verify) {
+        oss << std::setw(2) << static_cast<unsigned int>(b);
+    }
+    std::string reconstructed = oss.str();
+    std::string lowerInput = s;
+    std::transform(lowerInput.begin(), lowerInput.end(), lowerInput.begin(), ::tolower);
+    if(reconstructed != lowerInput) {
+        Logger::log(LogLevel::Error, "hash160 arguments must be specified in big-endian order");
+        return false;
     }
 
     return true;
