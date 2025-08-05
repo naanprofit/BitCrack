@@ -5,6 +5,7 @@
 #include <sstream>
 #include <array>
 #include <cctype>
+#include <algorithm>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -674,6 +675,11 @@ bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
         ss >> b;
         bytes[i] = static_cast<unsigned char>(b);
     }
+
+    // The internal representation is little-endian (hash[0] contains the
+    // least significant 32 bits).  Reverse the byte array so that a
+    // big-endian hex string is converted to this little-endian layout.
+    std::reverse(bytes.begin(), bytes.end());
 
     for(int i = 0; i < 5; ++i) {
         hash[i] = static_cast<unsigned int>(bytes[i * 4]) |

@@ -7,6 +7,7 @@
 #include <string>
 #include <sstream>
 #include <cctype>
+#include <algorithm>
 #include "AddressUtil.h"
 #include "../secp256k1lib/secp256k1.h"
 #include "../KeyFinder/PollardEngine.h"
@@ -91,6 +92,10 @@ static bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
         ss >> b;
         bytes[i] = static_cast<unsigned char>(b);
     }
+
+    // Convert the big-endian hex string to the little-endian layout used by
+    // hashWindowLE by reversing the byte order prior to packing 32-bit words.
+    std::reverse(bytes.begin(), bytes.end());
 
     for(int i = 0; i < 5; ++i) {
         hash[i] = static_cast<unsigned int>(bytes[i * 4]) |
@@ -341,8 +346,11 @@ bool testParseHash160Windows() {
     if(!parseHash160("e2192e8a7dd8dd1c88321959b477968b941aa973", h)) {
         return false;
     }
+    // For this known digest, the least-significant byte is 0x73.  Verify that
+    // window extraction on the little-endian representation returns the
+    // expected bytes at a few offsets.
     unsigned int offsets[4] = {0,20,40,60};
-    unsigned int expected[4] = {0xe2, 0xa2, 0xd8, 0x81};
+    unsigned int expected[4] = {0x73, 0x41, 0x96, 0x9b};
     for(int i = 0; i < 4; ++i) {
         auto got = hashWindowLE(h.data(), offsets[i], 8);
         if(got[0] != expected[i]) {
