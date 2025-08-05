@@ -1,8 +1,16 @@
 #include <stdint.h>
 #include <cuda_runtime.h>
+#include <cstdio>
 
 #include "secp256k1.cuh"
 #include "../KeyFinder/PollardTypes.h"
+
+#define CUDA_CHECK(call) do { \
+    cudaError_t err = (call); \
+    if(err != cudaSuccess) { \
+        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+    } \
+} while(0)
 
 __device__ static inline bool isZero256(const uint32_t a[8]) {
     for(int i = 0; i < 8; ++i) {
@@ -194,5 +202,22 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
             }
         }
     }
+}
+
+extern "C" void launchWindowKernel(dim3 gridDim,
+                                   dim3 blockDim,
+                                   uint64_t start_k,
+                                   uint64_t range_len,
+                                   int ws,
+                                   const uint32_t *offsets,
+                                   uint32_t mask,
+                                   const uint32_t *target_frags,
+                                   MatchRecord *out_buf,
+                                   unsigned int *out_count)
+{
+    windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets, mask,
+                                        target_frags, out_buf, out_count);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 

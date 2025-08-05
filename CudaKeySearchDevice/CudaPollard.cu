@@ -325,67 +325,6 @@ __device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], ui
     scalarMultiplyBase(k, X, Y);
 }
 
-extern "C" __global__ void windowKernel(uint64_t start_k,
-                                         uint64_t range_length,
-                                         uint32_t ws,
-                                         const uint32_t *offsets,
-                                         uint32_t offsets_count,
-                                         uint32_t mask,
-                                         const uint32_t target_fragments[][MAX_OFFSETS],
-                                         MatchRecord *out_buffer,
-                                         uint32_t *out_count)
-{
-    uint64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-    uint64_t stride = gridDim.x * blockDim.x;
-
-    for(uint64_t idx = tid; idx < range_length; idx += stride) {
-        uint64_t k = start_k + idx;
-        uint32_t scalar[8] = {0};
-        scalar[0] = (uint32_t)(k & 0xffffffffULL);
-        scalar[1] = (uint32_t)(k >> 32);
-        uint32_t X[8];
-        uint32_t Y[8];
-        point_mul_G(scalar, X, Y);
-
-        for(uint32_t i = 0; i < offsets_count; ++i) {
-            uint32_t off = offsets[i];
-            uint32_t word = off >> 5;
-            uint32_t bit  = off & 31U;
-            uint64_t val = ((uint64_t)X[word]) >> bit;
-            if(bit && word < 7) {
-                val |= ((uint64_t)X[word + 1]) << (32 - bit);
-            }
-            uint32_t frag = (uint32_t)val & mask;
-            for(uint32_t t = 0; t < ws; ++t) {
-                if(frag == target_fragments[t][i]) {
-                    uint32_t outIdx = atomicAdd(out_count, 1u);
-                    out_buffer[outIdx].offset = off;
-                    out_buffer[outIdx].fragment = frag;
-                    out_buffer[outIdx].k = k;
-                }
-            }
-        }
-    }
-}
-
-extern "C" void launchWindowKernel(dim3 gridDim,
-                                    dim3 blockDim,
-                                    uint64_t start_k,
-                                    uint64_t range_length,
-                                    uint32_t ws,
-                                    const uint32_t *offsets,
-                                    uint32_t offsets_count,
-                                    uint32_t mask,
-                                    const uint32_t target_fragments[][MAX_OFFSETS],
-                                    MatchRecord *out_buffer,
-                                    uint32_t *out_count)
-{
-    windowKernel<<<gridDim, blockDim>>>(start_k, range_length, ws, offsets,
-                                        offsets_count, mask, target_fragments,
-                                        out_buffer, out_count);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-}
 
 // Legacy kernel retained for backwards compatibility. It performs a
 // random walk and records distinguished points (those where the low
