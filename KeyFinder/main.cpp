@@ -49,6 +49,8 @@ typedef struct {
     unsigned int threads = 0;
     unsigned int blocks = 0;
     unsigned int pointsPerThread = 0;
+    unsigned int gridDim = 0;
+    unsigned int blockDim = 0;
     
     int compression = PointCompressionType::COMPRESSED;
 
@@ -278,6 +280,8 @@ void usage()
     printf("--wilds N              Wild walk steps (0 disables)\n");
     printf("--poll-batch N        Windows processed per poll (default 1024)\n");
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
+    printf("--grid-dim N          Override CUDA grid dimension (default auto)\n");
+    printf("--block-dim N         Override CUDA block dimension (default auto)\n");
     printf("--full                 Process entire keyspace\n");
     printf("--deterministic       Use sequential deterministic walks (still uses GPU kernels)\n");
     printf("--debug               Enable verbose Pollard debugging\n");
@@ -386,6 +390,8 @@ void writeCheckpoint(secp256k1::uint256 nextKey)
     tmp << "blocks=" << _config.blocks << std::endl;
     tmp << "threads=" << _config.threads << std::endl;
     tmp << "points=" << _config.pointsPerThread << std::endl;
+    tmp << "griddim=" << _config.gridDim << std::endl;
+    tmp << "blockdim=" << _config.blockDim << std::endl;
     tmp << "compression=" << getCompressionString(_config.compression) << std::endl;
     tmp << "device=" << _config.device << std::endl;
     tmp << "elapsed=" << (_config.elapsed + util::getSystemTime() - _startTime) << std::endl;
@@ -421,6 +427,12 @@ void readCheckpointFile()
     }
     if(_config.pointsPerThread == 0 && entries.find("points") != entries.end()) {
         _config.pointsPerThread = util::parseUInt32(entries["points"].value);
+    }
+    if(_config.gridDim == 0 && entries.find("griddim") != entries.end()) {
+        _config.gridDim = util::parseUInt32(entries["griddim"].value);
+    }
+    if(_config.blockDim == 0 && entries.find("blockdim") != entries.end()) {
+        _config.blockDim = util::parseUInt32(entries["blockdim"].value);
     }
     if(entries.find("compression") != entries.end()) {
         _config.compression = parseCompressionString(entries["compression"].value);
@@ -616,7 +628,10 @@ int runPollard()
 
 #ifdef BUILD_CUDA
             if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
-                engine.setDevice(std::unique_ptr<CudaPollardDevice>(new CudaPollardDevice(engine, window, offsets, targetHashes, _config.debug)));
+                engine.setDevice(std::unique_ptr<CudaPollardDevice>(
+                    new CudaPollardDevice(engine, window, offsets, targetHashes,
+                                           _config.debug, _config.gridDim,
+                                           _config.blockDim)));
             }
 #endif
 #ifdef BUILD_OPENCL
@@ -869,6 +884,8 @@ int main(int argc, char **argv)
     parser.add("", "--wilds", true);
     parser.add("", "--poll-batch", true);
     parser.add("", "--poll-interval", true);
+    parser.add("", "--grid-dim", true);
+    parser.add("", "--block-dim", true);
     parser.add("", "--full", false);
     parser.add("", "--deterministic", false);
     parser.add("", "--debug", false);
@@ -1035,6 +1052,10 @@ int main(int argc, char **argv)
                 } catch(...) {
                     throw std::string("invalid argument");
                 }
+            } else if(optArg.equals("", "--grid-dim")) {
+                _config.gridDim = util::parseUInt32(optArg.arg);
+            } else if(optArg.equals("", "--block-dim")) {
+                _config.blockDim = util::parseUInt32(optArg.arg);
             } else if(optArg.equals("", "--full")) {
                 _config.full = true;
             } else if(optArg.equals("", "--deterministic")) {
