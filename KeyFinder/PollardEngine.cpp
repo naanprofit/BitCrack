@@ -2,6 +2,9 @@
 #include "secp256k1.h"
 #include "AddressUtil.h"
 #include "../CudaKeySearchDevice/windowKernel.h"
+#if BUILD_CUDA
+#include <cuda_runtime.h>
+#endif
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -551,10 +554,77 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         }
     }
 
+#if BUILD_CUDA
+    uint64_t start_k = k.toUint64();
+    uint64_t range_len = 0;
+    for(uint256 tmp = k; tmp.cmp(U) <= 0; tmp = tmp.add(modulus)) {
+        range_len++;
+    }
+
+    if(range_len == 0) {
+        return;
+    }
+
+    uint32_t offsetsCount = static_cast<uint32_t>(_offsets.size());
+    if(offsetsCount == 0) {
+        return;
+    }
+    uint32_t mask = (_windowBits >= 32) ? 0xffffffffu : ((1u << _windowBits) - 1u);
+
+    uint32_t *d_offsets = nullptr;
+    uint32_t *d_frags = nullptr;
+    MatchRecord *d_out = nullptr;
+    unsigned int *d_count = nullptr;
+
+    cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&d_frags, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
+    cudaMalloc(&d_count, sizeof(unsigned int));
+
+    cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+
+    std::vector<uint32_t> hostFrags(offsetsCount);
+    for(size_t t = 0; t < _targets.size(); ++t) {
+        for(unsigned int i = 0; i < offsetsCount; ++i) {
+            auto win = hashWindow(_targets[t].hash.data(), _offsets[i], _windowBits);
+            hostFrags[i] = win[0] & mask;
+        }
+        cudaMemcpy(d_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+        cudaMemset(d_count, 0, sizeof(unsigned int));
+
+        dim3 block(256);
+        dim3 grid((range_len + block.x - 1) / block.x);
+        windowKernel<<<grid, block>>>(start_k, range_len, offsetsCount, d_offsets, mask, d_frags, d_out, d_count);
+        cudaError_t err = cudaGetLastError();
+        if(err != cudaSuccess) {
+            Logger::log(LogLevel::Error, std::string("windowKernel: ") + cudaGetErrorString(err));
+            break;
+        }
+
+        unsigned int hCount = 0;
+        cudaMemcpy(&hCount, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+        std::vector<MatchRecord> hostOut(hCount);
+        if(hCount) {
+            cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
+        }
+
+        for(const auto &r : hostOut) {
+            uint256 priv(r.k);
+            ecpoint pub = multiplyPoint(priv, G());
+            enumerateCandidate(priv, pub);
+        }
+    }
+
+    cudaFree(d_offsets);
+    cudaFree(d_frags);
+    cudaFree(d_out);
+    cudaFree(d_count);
+#else
     for(; k.cmp(U) <= 0; k = k.add(modulus)) {
         ecpoint pub = multiplyPoint(k, G());
         enumerateCandidate(k, pub);
     }
+#endif
 }
 
 void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps) {
