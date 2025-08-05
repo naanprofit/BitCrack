@@ -585,6 +585,11 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, const uint
     _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
     _startTime = std::chrono::steady_clock::now();
 
+    if(_sequential) {
+        Logger::log(LogLevel::Info,
+                    "Running deterministic sequential walk using GPU kernels");
+    }
+
     const uint256 &s = _sequential ? _L : start;
     _device->startTameWalk(s, steps, seed, _sequential);
     pollDevice();
@@ -612,6 +617,11 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
 
     _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
     _startTime = std::chrono::steady_clock::now();
+
+    if(_sequential) {
+        Logger::log(LogLevel::Info,
+                    "Running deterministic sequential walk using GPU kernels");
+    }
 
     const uint256 &s = _sequential ? _U : start;
     _device->startWildWalk(s, steps, seed, _sequential);
