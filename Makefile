@@ -139,10 +139,12 @@ dir_clunittest: dir_clutil
 dir_pollardtests: dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil dir_logger
 	make --directory PollardTests
 
+pollard-tests: dir_pollardtests
+
 test: dir_pollardtests
 	$(BINDIR)/pollardtests
 
-.PHONY: cpu
+.PHONY: cpu pollard-tests
 cpu:
 	$(MAKE) CPU=1 all
 

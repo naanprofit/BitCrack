@@ -210,6 +210,12 @@ Build CPU-only Pollard/CRT components:
 make CPU=1
 ```
 
+Build the Pollard test executable:
+```
+make pollard-tests
+```
+This builds `bin/pollardtests`.
+
 ### Python Pollard Rho/Kangaroo utility
 
 A prototype implementation of a dynamic bit-window Pollard Rho variant with tame and wild kangaroos and a CRT-based reconstruction is available in `tools/pollard_kangaroo_crt.py`.
