@@ -284,7 +284,11 @@ void CLPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 extern "C" bool runCLHashWindowLE(const unsigned int h[5], unsigned int offset,
                                    unsigned int bits, unsigned int out[5]) {
     // Lightweight wrapper used by unit tests to validate the OpenCL window
-    // extraction logic.
+    // extraction logic.  Guard against invalid ranges so tests can detect
+    // misuse.
+    if(offset + bits > 160u) {
+        return false;
+    }
     uint256 v = CLPollardDevice::hashWindowLE(h, offset, bits);
     v.exportWords(out, 5);
     return true;
