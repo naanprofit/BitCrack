@@ -280,3 +280,10 @@ void CLPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, &start,
             true, sequential);
 }
+
+extern "C" bool runCLHashWindowLE(const unsigned int h[5], unsigned int offset,
+                                   unsigned int bits, unsigned int out[5]) {
+    uint256 v = CLPollardDevice::hashWindowLE(h, offset, bits);
+    v.exportWords(out, 5);
+    return true;
+}

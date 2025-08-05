@@ -19,10 +19,10 @@ CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
 
 LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil -lutil -llogger
 ifeq ($(BUILD_OPENCL),1)
-LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB}
+LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB} -lCLKeySearchDevice
 endif
 ifeq ($(BUILD_CUDA),1)
-LIBS_LOCAL+=-lcudart -L${CUDA_LIB}
+LIBS_LOCAL+=-lcudart -L${CUDA_LIB} -lCudaKeySearchDevice
 endif
 
 all: $(OBJS)
