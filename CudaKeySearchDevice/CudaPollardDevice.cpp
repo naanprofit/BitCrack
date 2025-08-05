@@ -5,21 +5,9 @@
 #include <unordered_set>
 #include <algorithm>
 #include <stdexcept>
-
+#include "windowKernel.h"
 
 using namespace secp256k1;
-
-extern "C" void launchWindowKernel(dim3 gridDim,
-                                    dim3 blockDim,
-                                    uint64_t start_k,
-                                    uint64_t range_length,
-                                    uint32_t ws,
-                                    const uint32_t *offsets,
-                                    uint32_t offsets_count,
-                                    uint32_t mask,
-                                    const uint32_t target_fragments[][MAX_OFFSETS],
-                                    MatchRecord *out_buffer,
-                                    uint32_t *out_count);
 
 struct GpuPollardWindow {
     uint32_t targetIdx;
@@ -408,17 +396,16 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     uint32_t mask = (windowBits >= 32) ? 0xffffffffu : ((1u << windowBits) - 1u);
 
     uint32_t *d_offsets = nullptr;
-    uint32_t (*d_targets)[MAX_OFFSETS] = nullptr;
+    uint32_t *d_targets = nullptr;
     MatchRecord *d_out = nullptr;
     uint32_t *d_count = nullptr;
 
     cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
-    cudaMalloc(&d_targets, windowBits * MAX_OFFSETS * sizeof(uint32_t));
+    cudaMalloc(&d_targets, offsetsCount * sizeof(uint32_t));
     cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
     cudaMalloc(&d_count, sizeof(uint32_t));
 
     cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_targets, targetFragments, windowBits * MAX_OFFSETS * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<MatchRecord> hostOut(1024);
     std::unordered_set<uint32_t> seen;
@@ -459,41 +446,44 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         }
         dim3 grid(gridSize);
 
-        cudaMemset(d_count, 0, sizeof(uint32_t));
-        launchWindowKernel(grid, block, chunkStart, range, windowBits,
-                           d_offsets, offsetsCount, mask, d_targets, d_out, d_count);
+        for(uint32_t t = 0; t < windowBits; ++t) {
+            cudaMemcpy(d_targets, targetFragments[t], offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+            cudaMemset(d_count, 0, sizeof(uint32_t));
+            launchWindowKernel(grid, block, chunkStart, range, offsetsCount,
+                               d_offsets, mask, d_targets, d_out, d_count);
 
-        uint32_t hCount = 0;
-        cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-        if(hCount > hostOut.size()) hCount = hostOut.size();
-        cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
+            uint32_t hCount = 0;
+            cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+            if(hCount > hostOut.size()) hCount = hostOut.size();
+            cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
 
-        for(uint32_t i = 0; i < hCount; ++i) {
-            const MatchRecord &r = hostOut[i];
-            if(!seen.insert(r.offset).second) {
-                continue;
-            }
-
-            uint32_t modBits = r.offset + windowBits;
-            secp256k1::uint256 rem(0);
-            uint64_t frag = static_cast<uint64_t>(r.fragment & mask);
-            uint32_t word = r.offset / 32;
-            uint32_t bit = r.offset % 32;
-            if(word < 8) {
-                rem.v[word] |= static_cast<uint32_t>(frag << bit);
-                if(bit && word + 1 < 8) {
-                    rem.v[word + 1] |= static_cast<uint32_t>(frag >> (32 - bit));
+            for(uint32_t i = 0; i < hCount; ++i) {
+                const MatchRecord &r = hostOut[i];
+                if(!seen.insert(r.offset).second) {
+                    continue;
                 }
-            }
 
-            secp256k1::uint256 mod(0);
-            if(modBits < 256) {
-                mod.v[modBits / 32] = (1u << (modBits % 32));
-            }
-            PollardEngine::Constraint c{mod, rem};
-            outConstraints.push_back(c);
+                uint32_t modBits = r.offset + windowBits;
+                secp256k1::uint256 rem(0);
+                uint64_t frag = static_cast<uint64_t>(r.fragment & mask);
+                uint32_t word = r.offset / 32;
+                uint32_t bit = r.offset % 32;
+                if(word < 8) {
+                    rem.v[word] |= static_cast<uint32_t>(frag << bit);
+                    if(bit && word + 1 < 8) {
+                        rem.v[word + 1] |= static_cast<uint32_t>(frag >> (32 - bit));
+                    }
+                }
 
-            _engine.processWindow(0, r.offset, c);
+                secp256k1::uint256 mod(0);
+                if(modBits < 256) {
+                    mod.v[modBits / 32] = (1u << (modBits % 32));
+                }
+                PollardEngine::Constraint c{mod, rem};
+                outConstraints.push_back(c);
+
+                _engine.processWindow(0, r.offset, c);
+            }
         }
     }
 
