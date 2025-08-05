@@ -17,7 +17,7 @@ endif
 
 CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
 
-LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil -lutil -llogger
+LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil -lutil -llogger -pthread
 ifeq ($(BUILD_OPENCL),1)
 LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB} -lCLKeySearchDevice
 endif
