@@ -10,7 +10,10 @@
 #include <chrono>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
-#include "PollardTypes.h"
+#include "PollardTypes.h"  // for MatchRecord
+#if BUILD_CUDA
+#include "../CudaKeySearchDevice/windowKernel.h"
+#endif
 
 class PollardDevice {
 public:
@@ -112,6 +115,14 @@ private:
     secp256k1::uint256 _U;                    // search upper bound
     bool _sequential;                         // sequential walk mode
     bool _debug;                              // enable verbose logging
+
+#if BUILD_CUDA
+    // GPU buffers for window kernel results
+    uint32_t *_d_offsets = nullptr;
+    uint32_t *_d_frags = nullptr;
+    MatchRecord *_d_out = nullptr;
+    unsigned int *_d_count = nullptr;
+#endif
 
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
