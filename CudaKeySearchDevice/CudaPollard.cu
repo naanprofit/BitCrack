@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <cuda_runtime.h>
+#include <cstdio>
 #include "../KeyFinder/PollardTypes.h"
 #include "sha256.cuh"   // SHA256 hashing for public keys
 #include "ripemd160.cuh" // RIPEMD160 finalisation
@@ -6,6 +8,13 @@
 #include "ptx.cuh"       // byte order helpers
 
 __device__ void hashPublicKeyCompressed(const uint32_t*, uint32_t, uint32_t*);
+
+#define CUDA_CHECK(call) do { \
+    cudaError_t err = (call); \
+    if(err != cudaSuccess) { \
+        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+    } \
+} while(0)
 
 // Result written by the kernel when a hash window matches a target.
 struct GpuPollardWindow {
@@ -35,6 +44,14 @@ struct RNGState {
 struct CudaPollardMatch {
     uint32_t k[8];
     uint32_t hash[5];
+};
+
+#define MAX_OFFSETS 32
+
+struct MatchRecord {
+    uint32_t offset;
+    uint32_t fragment;
+    uint64_t k;
 };
 __device__ static inline uint64_t xorshift128plus(RNGState &state)
 {
@@ -308,6 +325,72 @@ __device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int 
     }
 
     pointAdd(r1x, r1y, r2x, r2y, rx, ry);
+}
+
+__device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], uint32_t Y[8]) {
+    scalarMultiplyBase(k, X, Y);
+}
+
+extern "C" __global__ void windowKernel(uint64_t start_k,
+                                         uint64_t range_length,
+                                         uint32_t ws,
+                                         const uint32_t *offsets,
+                                         uint32_t offsets_count,
+                                         uint32_t mask,
+                                         const uint32_t target_fragments[][MAX_OFFSETS],
+                                         MatchRecord *out_buffer,
+                                         uint32_t *out_count)
+{
+    uint64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    uint64_t stride = gridDim.x * blockDim.x;
+
+    for(uint64_t idx = tid; idx < range_length; idx += stride) {
+        uint64_t k = start_k + idx;
+        uint32_t scalar[8] = {0};
+        scalar[0] = (uint32_t)(k & 0xffffffffULL);
+        scalar[1] = (uint32_t)(k >> 32);
+        uint32_t X[8];
+        uint32_t Y[8];
+        point_mul_G(scalar, X, Y);
+
+        for(uint32_t i = 0; i < offsets_count; ++i) {
+            uint32_t off = offsets[i];
+            uint32_t word = off >> 5;
+            uint32_t bit  = off & 31U;
+            uint64_t val = ((uint64_t)X[word]) >> bit;
+            if(bit && word < 7) {
+                val |= ((uint64_t)X[word + 1]) << (32 - bit);
+            }
+            uint32_t frag = (uint32_t)val & mask;
+            for(uint32_t t = 0; t < ws; ++t) {
+                if(frag == target_fragments[t][i]) {
+                    uint32_t outIdx = atomicAdd(out_count, 1u);
+                    out_buffer[outIdx].offset = off;
+                    out_buffer[outIdx].fragment = frag;
+                    out_buffer[outIdx].k = k;
+                }
+            }
+        }
+    }
+}
+
+extern "C" void launchWindowKernel(dim3 gridDim,
+                                    dim3 blockDim,
+                                    uint64_t start_k,
+                                    uint64_t range_length,
+                                    uint32_t ws,
+                                    const uint32_t *offsets,
+                                    uint32_t offsets_count,
+                                    uint32_t mask,
+                                    const uint32_t target_fragments[][MAX_OFFSETS],
+                                    MatchRecord *out_buffer,
+                                    uint32_t *out_count)
+{
+    windowKernel<<<gridDim, blockDim>>>(start_k, range_length, ws, offsets,
+                                        offsets_count, mask, target_fragments,
+                                        out_buffer, out_count);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 // Legacy kernel retained for backwards compatibility. It performs a
