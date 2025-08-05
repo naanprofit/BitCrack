@@ -666,16 +666,20 @@ bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
         }
     }
 
-    for(int i = 0; i < 5; i++) {
-        std::string word = s.substr((4 - i) * 8, 8);
-        unsigned int w = 0;
+    std::array<unsigned char,20> bytes;
+    for(int i = 0; i < 20; ++i) {
+        unsigned int b = 0;
         std::stringstream ss;
-        ss << std::hex << word;
-        ss >> w;
-        hash[i] = ((w & 0x000000ffU) << 24) |
-                  ((w & 0x0000ff00U) << 8)  |
-                  ((w & 0x00ff0000U) >> 8)  |
-                  ((w & 0xff000000U) >> 24);
+        ss << std::hex << s.substr(i * 2, 2);
+        ss >> b;
+        bytes[i] = static_cast<unsigned char>(b);
+    }
+
+    for(int i = 0; i < 5; ++i) {
+        hash[i] = static_cast<unsigned int>(bytes[i * 4]) |
+                  (static_cast<unsigned int>(bytes[i * 4 + 1]) << 8) |
+                  (static_cast<unsigned int>(bytes[i * 4 + 2]) << 16) |
+                  (static_cast<unsigned int>(bytes[i * 4 + 3]) << 24);
     }
 
     return true;
