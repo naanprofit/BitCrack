@@ -40,6 +40,8 @@ static std::string hashToString(const unsigned int h[5]) {
 
 namespace {
 
+uint256 maskBits(unsigned int bits);
+
 // Simple CPU implementation of the device interface used for unit tests and
 // as a fallback when no GPU is available.
 class CPUPollardDevice : public PollardDevice {
@@ -47,8 +49,13 @@ class CPUPollardDevice : public PollardDevice {
     SimpleRingBuffer<PollardMatch> _buffer;
 
     bool checkPoint(const ecpoint &p) {
-        uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
-        return (p.x.v[0] & mask) == 0;
+        uint256 mask = maskBits(_windowBits);
+        for(int w = 0; w < 8; ++w) {
+            if((p.x.v[w] & mask.v[w]) != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
 public:
@@ -273,27 +280,27 @@ bool combineCRT(const PollardEngine::Constraint &a,
 
 // Extract ``bits`` bits starting at ``offset`` (LSB order) from a 160-bit
 // little-endian hash represented as five 32-bit words.  The result is returned
-// as five little-endian words with any unused high words cleared.
-std::array<unsigned int,5> hashWindowLE(const unsigned int h[5], unsigned int offset,
-                                        unsigned int bits) {
-    std::array<unsigned int,5> out{};
+// as a ``uint256`` with any unused high words cleared.
+uint256 hashWindowLE(const unsigned int h[5], unsigned int offset,
+                     unsigned int bits) {
+    uint256 out(0);
     unsigned int word = offset / 32;
     unsigned int bit  = offset % 32;
     unsigned int words = (bits + 31) / 32;        // number of output words
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
-        uint64_t val = ((uint64_t)h[word + i]) >> bit;
+        uint32_t val = h[word + i] >> bit;
         if(bit && word + i + 1 < 5) {
-            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
+            val |= h[word + i + 1] << (32 - bit);
         }
-        out[i] = static_cast<unsigned int>(val & 0xffffffffULL);
+        out.v[i] = val;
     }
     unsigned int maskBits = bits % 32;
     if(maskBits) {
-        unsigned int mask = (1u << maskBits) - 1u;
-        out[words - 1] &= mask;
+        uint32_t mask = (1u << maskBits) - 1u;
+        out.v[words - 1] &= mask;
     }
-    for(unsigned int i = words; i < 5; ++i) {
-        out[i] = 0u;
+    for(unsigned int i = words; i < 8; ++i) {
+        out.v[i] = 0u;
     }
     return out;
 }
@@ -423,8 +430,13 @@ bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
 }
 
 bool PollardEngine::checkPoint(const ecpoint &p) {
-    uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
-    return (p.x.v[0] & mask) == 0;
+    uint256 mask = maskBits(_windowBits);
+    for(int w = 0; w < 8; ++w) {
+        if((p.x.v[w] & mask.v[w]) != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void PollardEngine::processWindow(size_t targetIdx, unsigned int offset,
@@ -606,7 +618,7 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         // Pre-compute the target fragments for this hash.
         for(uint32_t i = 0; i < offsetCount; ++i) {
             auto win = hashWindow(_targets[t].hash.data(), _offsets[i], ws);
-            hostFrags[i] = win[0] & mask;
+            hostFrags[i] = win.v[0] & mask;
         }
         CUDA_CHECK(cudaMemcpy(dev_target_frags, hostFrags.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(dev_count, 0, sizeof(uint32_t)));
@@ -718,13 +730,13 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
                 util::format(_reconstructionAttempts));
 }
 
-std::array<unsigned int,5> PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
-                                                     unsigned int bits) {
+uint256 PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
+                                  unsigned int bits) {
     return hashWindowLE(h, offset, bits);
 }
 
-std::array<unsigned int,5> PollardEngine::publicHashWindow(const unsigned int h[5], unsigned int offset,
-                                                           unsigned int bits) {
+uint256 PollardEngine::publicHashWindow(const unsigned int h[5], unsigned int offset,
+                                        unsigned int bits) {
     return hashWindow(h, offset, bits);
 }
 

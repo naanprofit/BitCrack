@@ -89,11 +89,11 @@ public:
     void setDevice(std::unique_ptr<PollardDevice> device);
 
     // Public wrapper exposing the internal hashWindow helper.  ``h`` must be
-    // supplied in little-endian word order.  The returned array contains the
-    // extracted window as five 32-bit words with unused high words set to
-    // zero.
-    static std::array<unsigned int,5> publicHashWindow(const unsigned int h[5], unsigned int offset,
-                                                       unsigned int bits);
+    // supplied in little-endian word order.  The returned ``uint256`` contains
+    // the extracted window in little-endian format with unused high words
+    // cleared.
+    static secp256k1::uint256 publicHashWindow(const unsigned int h[5], unsigned int offset,
+                                               unsigned int bits);
 
 private:
     struct TargetState {
@@ -140,8 +140,8 @@ private:
     void handleMatch(const PollardMatch &m);
     void pollDevice();
 
-    static std::array<unsigned int,5> hashWindow(const unsigned int h[5], unsigned int offset,
-                                                 unsigned int bits);
+    static secp256k1::uint256 hashWindow(const unsigned int h[5], unsigned int offset,
+                                         unsigned int bits);
 };
 
 #endif
