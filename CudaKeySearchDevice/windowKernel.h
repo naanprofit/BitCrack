@@ -2,17 +2,7 @@
 #define WINDOW_KERNEL_H
 
 #include <cstdint>
-
-// ``dim3`` is provided by ``<cuda_runtime.h>`` when compiling with NVCC.
-#ifndef __CUDACC__
-struct dim3 {
-    unsigned int x, y, z;
-    dim3(unsigned int vx = 1, unsigned int vy = 1, unsigned int vz = 1)
-        : x(vx), y(vy), z(vz) {}
-};
-#else
 #include <cuda_runtime.h>
-#endif
 
 // Minimal record emitted by ``windowKernel`` describing a matching window.
 struct MatchRecord {
