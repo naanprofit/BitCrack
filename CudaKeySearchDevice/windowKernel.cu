@@ -2,7 +2,7 @@
 #include <cuda_runtime.h>
 
 #include "secp256k1.cuh"
-#include "../KeyFinder/PollardTypes.h"
+#include "windowKernel.h"
 
 __device__ static inline bool isZero256(const uint32_t a[8]) {
     for(int i = 0; i < 8; ++i) {
@@ -157,14 +157,19 @@ __device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], ui
     scalarMultiplyBase(k, X, Y);
 }
 
+// Kernel performing a grid-stride loop over scalars ``k`` and extracting
+// window fragments from the x-coordinate of ``k * G``.  Matching fragments are
+// appended to ``out_buf`` using an atomic counter.
 extern "C" __global__ void windowKernel(uint64_t start_k,
                                          uint64_t range_len,
-                                         int ws,
+                                         uint32_t ws,
                                          const uint32_t *offsets,
+                                         uint32_t offsets_count,
                                          uint32_t mask,
                                          const uint32_t *target_frags,
                                          MatchRecord *out_buf,
-                                         unsigned int *out_count) {
+                                         uint32_t *out_count) {
+    (void)ws; // window size currently unused; mask encodes the width
     uint64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
     uint64_t stride = gridDim.x * blockDim.x;
 
@@ -177,7 +182,7 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
         uint32_t Y[8];
         point_mul_G(scalar, X, Y);
 
-        for(int i = 0; i < ws; ++i) {
+        for(uint32_t i = 0; i < offsets_count; ++i) {
             uint32_t off = offsets[i];
             uint32_t word = off >> 5;
             uint32_t bit = off & 31U;
@@ -187,12 +192,35 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
             }
             uint32_t frag = (uint32_t)val & mask;
             if(frag == target_frags[i]) {
-                unsigned int out_idx = atomicAdd(out_count, 1u);
+                uint32_t out_idx = atomicAdd(out_count, 1u);
                 out_buf[out_idx].offset = off;
                 out_buf[out_idx].fragment = frag;
                 out_buf[out_idx].k = k;
             }
         }
+    }
+}
+
+// Host wrapper with simple error checking
+extern "C" void launchWindowKernel(uint64_t start_k,
+                                   uint64_t range_len,
+                                   uint32_t ws,
+                                   const uint32_t *offsets,
+                                   uint32_t offsets_count,
+                                   uint32_t mask,
+                                   const uint32_t *target_frags,
+                                   MatchRecord *out_buf,
+                                   uint32_t *out_count,
+                                   dim3 gridDim,
+                                   dim3 blockDim) {
+    // Launch the kernel
+    windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets,
+                                        offsets_count, mask, target_frags,
+                                        out_buf, out_count);
+    // Check for launch errors
+    cudaError_t err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        fprintf(stderr, "windowKernel launch failed: %s\n", cudaGetErrorString(err));
     }
 }
 
