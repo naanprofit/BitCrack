@@ -572,95 +572,54 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     }
     uint32_t mask = (_windowBits >= 32) ? 0xffffffffu : ((1u << _windowBits) - 1u);
 
-    uint32_t *d_offsets = nullptr;
-    uint32_t *d_frags = nullptr;
-    MatchRecord *d_out = nullptr;
-    uint32_t *d_count = nullptr;
+    uint32_t *dev_offsets = nullptr;
+    uint32_t *dev_target_frags = nullptr;
+    MatchRecord *dev_out_buf = nullptr;
+    uint32_t *dev_out_count = nullptr;
 
-    // Allocate device buffers
-    cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
-    cudaError_t err = cudaGetLastError();
-    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
-    cudaMalloc(&d_frags, offsetsCount * sizeof(uint32_t));
-    err = cudaGetLastError();
-    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
-    cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
-    err = cudaGetLastError();
-    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
-    cudaMalloc(&d_count, sizeof(uint32_t));
-    err = cudaGetLastError();
-    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+    cudaMalloc(&dev_offsets, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&dev_target_frags, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&dev_out_buf, range_len * sizeof(MatchRecord));
+    cudaMalloc(&dev_out_count, sizeof(uint32_t));
 
-    // Upload offset positions once
-    cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-    err = cudaGetLastError();
-    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+    cudaMemcpy(dev_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
-        // Build target fragments for this target and upload
-        for(unsigned int i = 0; i < offsetsCount; ++i) {
+        for(uint32_t i = 0; i < offsetsCount; ++i) {
             auto win = hashWindow(_targets[t].hash.data(), _offsets[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
-        cudaMemcpy(d_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-        err = cudaGetLastError();
-        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
-        cudaMemset(d_count, 0, sizeof(uint32_t));
-        err = cudaGetLastError();
-        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+        cudaMemcpy(dev_target_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+        cudaMemset(dev_out_count, 0, sizeof(uint32_t));
 
-        // Configurable launch dimensions
-        unsigned int blockSize = 256;
-        dim3 block(blockSize);
-        dim3 grid((range_len + block.x - 1) / block.x);
+        launchWindowKernel(start_k, range_len, _windowBits,
+                           dev_offsets, offsetsCount, mask,
+                           dev_target_frags, dev_out_buf, dev_out_count);
 
-        // Launch kernel via wrapper
-        launchWindowKernel(grid, block, start_k, range_len, _windowBits,
-                           d_offsets, offsetsCount, mask, d_frags,
-                           d_out, d_count);
-
-        uint32_t hCount = 0;
-        cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-        err = cudaGetLastError();
-        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
-        std::vector<MatchRecord> hostOut(hCount);
-        if(hCount) {
-            cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
-            err = cudaGetLastError();
-            if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+        uint32_t hitCount = 0;
+        cudaMemcpy(&hitCount, dev_out_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        std::vector<MatchRecord> hostBuf(hitCount);
+        if(hitCount) {
+            cudaMemcpy(hostBuf.data(), dev_out_buf, hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
         }
 
         std::vector<PollardEngine::Constraint> constraints;
-        std::vector<unsigned int> offs;
-        for(const auto &r : hostOut) {
-            uint32_t modBits = r.offset + _windowBits;
-            secp256k1::uint256 rem(0);
-            uint64_t frag = static_cast<uint64_t>(r.fragment & mask);
-            uint32_t word = r.offset / 32;
-            uint32_t bit = r.offset % 32;
-            if(word < 8) {
-                rem.v[word] |= static_cast<uint32_t>(frag << bit);
-                if(bit && word + 1 < 8) {
-                    rem.v[word + 1] |= static_cast<uint32_t>(frag >> (32 - bit));
-                }
-            }
-            secp256k1::uint256 mod(0);
-            if(modBits < 256) {
-                mod.v[modBits / 32] = (1u << (modBits % 32));
-            }
-            constraints.emplace_back(PollardEngine::Constraint{mod, rem});
-            offs.push_back(r.offset);
+        for(uint32_t i = 0; i < hitCount; ++i) {
+            auto &r = hostBuf[i];
+            uint32_t mod = 1u << (r.offset + _windowBits);
+            uint32_t rem = (r.fragment << r.offset) & (mod - 1);
+            constraints.emplace_back(mod, rem);
         }
-        for(size_t i = 0; i < constraints.size(); ++i) {
-            processWindow(t, offs[i], constraints[i]);
+        for(uint32_t i = 0; i < hitCount; ++i) {
+            processWindow(t, hostBuf[i].offset, constraints[i]);
         }
     }
 
-    cudaFree(d_offsets);
-    cudaFree(d_frags);
-    cudaFree(d_out);
-    cudaFree(d_count);
+    cudaFree(dev_offsets);
+    cudaFree(dev_target_frags);
+    cudaFree(dev_out_buf);
+    cudaFree(dev_out_count);
 #else
     for(; k.cmp(U) <= 0; k = k.add(modulus)) {
         ecpoint pub = multiplyPoint(k, G());
