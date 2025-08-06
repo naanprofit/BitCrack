@@ -263,14 +263,24 @@ bool combineCRT(const PollardEngine::Constraint &a,
     return true;
 }
 
-// Extract ``bits`` bits starting at ``offset`` (LSB order) from a 160-bit
-// little-endian hash represented as five 32-bit words.  The result is returned
-// as five little-endian words with any unused high words cleared.
-std::array<unsigned int,5> hashWindowLE(const unsigned int h[5], unsigned int offset,
+// Extract ``bits`` bits starting at ``offset`` (MSB=0) from a 160-bit
+// big-endian hash represented as five little-endian 32-bit words.  This
+// mirrors the Python expression ``(target >> (160 - (off + ws)))`` where ``off``
+// is the bit offset from the most significant bit and ``ws`` is the window
+// size.  The result is returned as five little-endian words with any unused
+// high words cleared.
+std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int offset,
                                         unsigned int bits) {
     std::array<unsigned int,5> out{};
-    unsigned int word = offset / 32;
-    unsigned int bit  = offset % 32;
+    if(offset + bits > 160) {
+        return out;
+    }
+
+    // Convert the big-endian offset to the equivalent little-endian bit
+    // offset used by the existing window-extraction logic.
+    unsigned int leOffset = 160 - (offset + bits);
+    unsigned int word = leOffset / 32;
+    unsigned int bit  = leOffset % 32;
     unsigned int words = (bits + 31) / 32;        // number of output words
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -294,17 +304,23 @@ std::array<unsigned int,5> hashWindowLE(const unsigned int h[5], unsigned int of
 
 void PollardEngine::handleMatch(const PollardMatch &m) {
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int off : _offsets) {
-            if(off + _windowBits > 160) {
+        for(unsigned int offBE : _offsets) {
+            if(offBE + _windowBits > 160) {
                 continue;
             }
-            if(_targets[t].seenOffsets.count(off)) {
+
+            // Convert big-endian offset to the little-endian offset used for
+            // scalar constraints and bookkeeping.
+            unsigned int offLE = 160 - (offBE + _windowBits);
+
+            if(_targets[t].seenOffsets.count(offLE)) {
                 continue;
             }
-            auto want = hashWindowLE(_targets[t].hash.data(), off, _windowBits);
-            auto got  = hashWindowLE(m.hash, off, _windowBits);
+
+            auto want = hashWindowBE(_targets[t].hash.data(), offBE, _windowBits);
+            auto got  = hashWindowBE(m.hash, offBE, _windowBits);
             if(got == want) {
-                unsigned int modBits = off + _windowBits;
+                unsigned int modBits = offLE + _windowBits; // == 160 - offBE
                 if(modBits > 256) {
                     continue;
                 }
@@ -317,7 +333,7 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                 if(modBits < 256) {
                     mod.v[modBits / 32] = (1u << (modBits % 32));
                 }
-                processWindow(t, off, {mod, rem});
+                processWindow(t, offLE, {mod, rem});
             }
         }
     }
@@ -696,7 +712,7 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
 
 std::array<unsigned int,5> PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
                                                      unsigned int bits) {
-    return hashWindowLE(h, offset, bits);
+    return hashWindowBE(h, offset, bits);
 }
 
 std::array<unsigned int,5> PollardEngine::publicHashWindow(const unsigned int h[5], unsigned int offset,
