@@ -137,16 +137,22 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     cudaMemcpy(d_starts, h_starts.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
 
-    // Prepare target windows
+    // Prepare target windows. Offsets supplied via the CLI are measured from the
+    // most-significant bit of the hash (big-endian).  Convert them to the
+    // little-endian offsets expected by the device kernels prior to computing
+    // the target fragments.
     std::vector<GpuTargetWindow> h_windows;
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int off : _offsets) {
-            if(off + _windowBits > 160) continue;
+        for(unsigned int offBE : _offsets) {
+            if(offBE + _windowBits > 160) {
+                continue;
+            }
+            unsigned int offLE = 160 - (offBE + _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
-            tw.offset = off;
-            tw.bits = _windowBits;
-            uint256 hv = hashWindowLE(_targets[t].data(), off, _windowBits);
+            tw.offset    = offLE;
+            tw.bits      = _windowBits;
+            uint256 hv   = hashWindowLE(_targets[t].data(), offLE, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -306,16 +312,19 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     cudaMemcpy(d_startY, h_startY.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
 
-    // Prepare target windows
+    // Prepare target windows using little-endian offsets for the device
     std::vector<GpuTargetWindow> h_windows;
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int off : _offsets) {
-            if(off + _windowBits > 160) continue;
+        for(unsigned int offBE : _offsets) {
+            if(offBE + _windowBits > 160) {
+                continue;
+            }
+            unsigned int offLE = 160 - (offBE + _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
-            tw.offset = off;
-            tw.bits = _windowBits;
-            uint256 hv = hashWindowLE(_targets[t].data(), off, _windowBits);
+            tw.offset    = offLE;
+            tw.bits      = _windowBits;
+            uint256 hv   = hashWindowLE(_targets[t].data(), offLE, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -398,7 +407,17 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
                                      uint32_t windowBits,
                                      const uint32_t *targetFragments,
                                      std::vector<PollardEngine::Constraint> &outConstraints) {
-    uint32_t offsetsCount = static_cast<uint32_t>(_offsets.size());
+    // Convert supplied offsets (big-endian) to little-endian form for the
+    // window kernel and filter out any invalid entries that would exceed the
+    // 160-bit hash length.
+    std::vector<uint32_t> offsetsLE;
+    for(unsigned int offBE : _offsets) {
+        if(offBE + windowBits > 160) {
+            continue;
+        }
+        offsetsLE.push_back(160 - (offBE + windowBits));
+    }
+    uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
     if(offsetsCount == 0 || windowBits == 0) {
         return;
     }
@@ -422,7 +441,7 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     err = cudaGetLastError();
     if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 
-    cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_offsets, offsetsLE.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
     err = cudaGetLastError();
     if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
     cudaMemcpy(d_targets, targetFragments, offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
