@@ -21,7 +21,7 @@ CUSRC=../CudaKeySearchDevice/windowKernel.cu \
 
 OBJS=
 ifeq ($(BUILD_CUDA),1)
-OBJS+=cuda_scalar_one.o PollardEngine.o $(CUSRC:.cu=.o)
+OBJS+=cuda_scalar_one.o PollardEngine.o CudaPollardDevice.o $(CUSRC:.cu=.o) ../CudaKeySearchDevice/cuda_libs.o
 endif
 
 CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
@@ -51,10 +51,14 @@ PollardEngine.o: ../KeyFinder/PollardEngine.cpp
 ;${NVCC} -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
+CudaPollardDevice.o: ../CudaKeySearchDevice/CudaPollardDevice.cpp
+;${NVCC} -c ../CudaKeySearchDevice/CudaPollardDevice.cpp -o CudaPollardDevice.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
 $(CUSRC:.cu=.o): %.o: %.cu
 ;${NVCC} -x cu -c $< -o $@ ${NVCCFLAGS} \
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
-;rm -f pollardtests.bin cuda_scalar_one.o PollardEngine.o $(CUSRC:.cu=.o)
+;rm -f pollardtests.bin cuda_scalar_one.o PollardEngine.o CudaPollardDevice.o $(CUSRC:.cu=.o) ../CudaKeySearchDevice/cuda_libs.o
 

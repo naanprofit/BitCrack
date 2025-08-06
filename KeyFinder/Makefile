@@ -1,9 +1,9 @@
-CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
-# CUDA kernels that must be linked directly into the executable when building
-# the CUDA variant.
-CUSRC=../CudaKeySearchDevice/windowKernel.cu \
+CPPSRC=ConfigFile.cpp DeviceManager.cpp main.cpp
+# Sources compiled with NVCC when BUILD_CUDA=1
+CU_SRC_CPP=PollardEngine.cpp
+CU_SRC_CU=../CudaKeySearchDevice/windowKernel.cu \
       ../CudaKeySearchDevice/CudaPollard.cu
-CUOBJ=$(CUSRC:.cu=.o)
+CUOBJ=$(CU_SRC_CPP:=.o) $(CU_SRC_CU:=.o)
 
 .RECIPEPREFIX := ;
 
@@ -11,7 +11,7 @@ all:
 ifeq ($(BUILD_CUDA), 1)
 ;# Compile CUDA kernels with NVCC.  ``-x cu`` ensures the files are
 ;# treated as CUDA sources even though they carry a ``.cu`` extension.
-;for file in $(CUSRC) ; do \
+;for file in $(CU_SRC_CPP) $(CU_SRC_CU) ; do \
 ;${NVCC} -x cu -c $$file -o $${file}.o ${NVCCFLAGS} \
 ;    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
 ;done
@@ -19,7 +19,8 @@ ifeq ($(BUILD_CUDA), 1)
 ;    -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 \
 ;    ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 \
 ;    -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil \
-;    -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
+;    -lCudaKeySearchDevice ../CudaKeySearchDevice/cuda_libs.o \
+;    -lcudadevrt -lcudart -lcmdparse
 ;mkdir -p $(BINDIR)
 ;cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
 endif
