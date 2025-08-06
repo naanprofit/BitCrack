@@ -661,8 +661,7 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, const uint
                     "Running deterministic sequential walk using GPU kernels");
     }
 
-    const uint256 &s = _sequential ? _L : start;
-    _device->startTameWalk(s, steps, seed, _sequential);
+    _device->startTameWalk(start, steps, seed, _sequential);
     pollDevice();
 
     auto end = std::chrono::steady_clock::now();
@@ -694,8 +693,7 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
                     "Running deterministic sequential walk using GPU kernels");
     }
 
-    const uint256 &s = _sequential ? _U : start;
-    _device->startWildWalk(s, steps, seed, _sequential);
+    _device->startWildWalk(start, steps, seed, _sequential);
     pollDevice();
 
     auto end = std::chrono::steady_clock::now();
@@ -718,5 +716,25 @@ std::array<unsigned int,5> PollardEngine::hashWindow(const unsigned int h[5], un
 std::array<unsigned int,5> PollardEngine::publicHashWindow(const unsigned int h[5], unsigned int offset,
                                                            unsigned int bits) {
     return hashWindow(h, offset, bits);
+}
+
+bool PollardEngine::allOffsetsFound() const {
+    for(const auto &t : _targets) {
+        if(t.seenOffsets.size() < _offsets.size()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+size_t PollardEngine::foundOffsets() const {
+    if(_targets.empty()) {
+        return 0;
+    }
+    return _targets[0].seenOffsets.size();
+}
+
+size_t PollardEngine::totalOffsets() const {
+    return _offsets.size();
 }
 
