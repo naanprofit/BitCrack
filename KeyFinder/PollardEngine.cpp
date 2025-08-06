@@ -1,15 +1,16 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
 #include "AddressUtil.h"
-#include "windowKernel.h"
 #if BUILD_CUDA
+#include "windowKernel.h"
 #include <cuda_runtime.h>
 #include <cstdio>
 #define CUDA_CHECK(call) do { \
     cudaError_t err__ = (call); \
     if (err__ != cudaSuccess) { \
         fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err__)); \
-        if(!cuda_cleanup_in_progress) goto cuda_cleanup; \
+        cuda_cleanup(); \
+        return; \
     } \
 } while(0)
 #endif
@@ -580,20 +581,27 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     uint32_t ws = _windowBits;
     uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
 
+    std::vector<uint32_t> hostFrags(offsetCount);
+
     // Allocate GPU buffers.
-    bool cuda_cleanup_in_progress = false;
     uint32_t *dev_offsets = nullptr;
     uint32_t *dev_target_frags = nullptr;
     MatchRecord *dev_out = nullptr;
     uint32_t *dev_count = nullptr;
+
+    auto cuda_cleanup = [&]() {
+        if(dev_offsets) cudaFree(dev_offsets);
+        if(dev_target_frags) cudaFree(dev_target_frags);
+        if(dev_out) cudaFree(dev_out);
+        if(dev_count) cudaFree(dev_count);
+    };
+
     CUDA_CHECK(cudaMalloc(&dev_offsets, offsetCount * sizeof(uint32_t)));
     CUDA_CHECK(cudaMalloc(&dev_target_frags, offsetCount * sizeof(uint32_t)));
     CUDA_CHECK(cudaMalloc(&dev_out, sizeof(MatchRecord) * 1024));
     CUDA_CHECK(cudaMalloc(&dev_count, sizeof(uint32_t)));
 
     CUDA_CHECK(cudaMemcpy(dev_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
-
-    std::vector<uint32_t> hostFrags(offsetCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
         // Pre-compute the target fragments for this hash.
         for(uint32_t i = 0; i < offsetCount; ++i) {
@@ -643,14 +651,7 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         }
     }
 
-    goto cuda_cleanup;
-
-cuda_cleanup:
-    cuda_cleanup_in_progress = true;
-    CUDA_CHECK(cudaFree(dev_offsets));
-    CUDA_CHECK(cudaFree(dev_target_frags));
-    CUDA_CHECK(cudaFree(dev_out));
-    CUDA_CHECK(cudaFree(dev_count));
+    cuda_cleanup();
     return;
 #else
     for(; k.cmp(U) <= 0; k = k.add(modulus)) {
