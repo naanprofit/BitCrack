@@ -6,9 +6,6 @@ ifeq ($(strip $(BUILD_OPENCL)),)
 BUILD_OPENCL=0
 endif
 CPPSRC=main.cpp
-ifeq ($(BUILD_CUDA),0)
-CPPSRC+=../KeyFinder/PollardEngine.cpp
-endif
 CUDASRC=cuda_scalar_one.cu
 BINDIR?=.
 
@@ -21,7 +18,7 @@ CUSRC=../CudaKeySearchDevice/windowKernel.cu \
 
 OBJS=
 ifeq ($(BUILD_CUDA),1)
-OBJS+=cuda_scalar_one.o PollardEngine.o $(CUSRC:.cu=.o)
+OBJS+=main.o PollardEngine.o CudaPollardDevice.o cuda_scalar_one.o $(CUSRC:.cu=.o)
 endif
 
 CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
@@ -36,7 +33,7 @@ endif
 
 all: $(OBJS)
 ifeq ($(BUILD_CUDA),1)
-;${NVCC} ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
+;${NVCC} ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin $(OBJS) ${LIBS} ${LIBS_LOCAL}
 else
 ;${CXX} ${CXXFLAGS} ${INCLUDE} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
 endif
@@ -47,8 +44,16 @@ cuda_scalar_one.o: cuda_scalar_one.cu
 ;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${NVCCFLAGS} \
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
+main.o: main.cpp
+;${NVCC} -c main.cpp -o main.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
 PollardEngine.o: ../KeyFinder/PollardEngine.cpp
 ;${NVCC} -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
+CudaPollardDevice.o: ../CudaKeySearchDevice/CudaPollardDevice.cpp
+;${NVCC} -c ../CudaKeySearchDevice/CudaPollardDevice.cpp -o CudaPollardDevice.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 $(CUSRC:.cu=.o): %.o: %.cu
@@ -56,5 +61,5 @@ $(CUSRC:.cu=.o): %.o: %.cu
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
-;rm -f pollardtests.bin cuda_scalar_one.o PollardEngine.o $(CUSRC:.cu=.o)
+;rm -f pollardtests.bin cuda_scalar_one.o main.o PollardEngine.o CudaPollardDevice.o $(CUSRC:.cu=.o)
 

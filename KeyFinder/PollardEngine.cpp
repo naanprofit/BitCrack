@@ -2,8 +2,8 @@
 #include "secp256k1.h"
 #include "AddressUtil.h"
 #if BUILD_CUDA
-#include "windowKernel.h"
 #include <cuda_runtime.h>
+#include "windowKernel.h"
 #include <cstdio>
 #define CUDA_CHECK(call) do { \
     cudaError_t err__ = (call); \
@@ -623,10 +623,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         CUDA_CHECK(cudaMemcpy(dev_target_frags, hostFrags.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(dev_count, 0, sizeof(uint32_t)));
 
-        // Launch the GPU kernel to perform the window/fragment matching.  The
-        // kernel configuration can be adjusted at runtime via environment
-        // variables (see ``windowKernel.cu``).
-        launchWindowKernel(start_k, range_len, ws,
+        // Launch the GPU kernel to perform the window/fragment matching.
+        dim3 block(256);
+        dim3 grid((range_len + block.x - 1) / block.x);
+        launchWindowKernel(grid, block, start_k, range_len, ws,
                            dev_offsets, offsetCount, mask,
                            dev_target_frags, dev_out, dev_count);
         CUDA_CHECK(cudaGetLastError());
