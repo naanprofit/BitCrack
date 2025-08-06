@@ -12,10 +12,6 @@
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"  // basic Pollard structures
 #if BUILD_CUDA
-// Definitions for the lightweight GPU window kernel used to pre-filter
-// candidates.  The header is safe to include in non-CUDA compilation units
-// thanks to the stub ``dim3`` structure it defines when ``__CUDACC__`` is not
-// present.
 #include "windowKernel.h"
 #endif
 

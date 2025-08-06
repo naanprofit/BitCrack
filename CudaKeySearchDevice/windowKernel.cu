@@ -216,7 +216,9 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
     }
 }
 
-extern "C" void launchWindowKernel(uint64_t start_k,
+extern "C" void launchWindowKernel(dim3 gridDim,
+                                   dim3 blockDim,
+                                   uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,
                                    const uint32_t *offsets,
@@ -225,11 +227,6 @@ extern "C" void launchWindowKernel(uint64_t start_k,
                                    const uint32_t *target_frags,
                                    MatchRecord *out_buf,
                                    uint32_t *out_count) {
-    // Compute a simple launch configuration.  The caller can modify this logic
-    // if a different grid/block size is desired.
-    dim3 blockDim(256);
-    dim3 gridDim((range_len + blockDim.x - 1) / blockDim.x);
-
     // Launch the kernel and check for launch/runtime errors.
     windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets,
                                         offsets_count, mask, target_frags,
