@@ -3,11 +3,8 @@ CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
 all:
 ifeq ($(BUILD_CUDA), 1)
 	${NVCC} -x cu -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} \
-	../CudaKeySearchDevice/windowKernel.o \
-	../CudaKeySearchDevice/CudaPollard.o \
-	../CudaKeySearchDevice/CudaPollardDevice.o \
-	${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} ${LIBS} -L${CUDA_LIB} \
-	-lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lcudautil -llogger -lutil \
+	${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} ${LIBS} -L${CUDA_LIB} -L${LIBDIR} \
+	-lCudaKeySearchDevice -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lcudautil -llogger -lutil \
 	-lcudart -lcudadevrt -lcmdparse
 	mkdir -p $(BINDIR)
 	cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
