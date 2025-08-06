@@ -12,7 +12,7 @@
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"  // for MatchRecord
 #if BUILD_CUDA
-#include "../CudaKeySearchDevice/windowKernel.h"
+#include "windowKernel.h"
 #endif
 
 class PollardDevice {

@@ -1,7 +1,7 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
 #include "AddressUtil.h"
-#include "../CudaKeySearchDevice/windowKernel.h"
+#include "windowKernel.h"
 #if BUILD_CUDA
 #include <cuda_runtime.h>
 #endif
@@ -565,41 +565,36 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         return;
     }
 
-    uint32_t offsetsCount = static_cast<uint32_t>(_offsets.size());
-    if(offsetsCount == 0) {
+    uint32_t offsetCount = static_cast<uint32_t>(_offsets.size());
+    if(offsetCount == 0) {
         return;
     }
     uint32_t mask = (_windowBits >= 32) ? 0xffffffffu : ((1u << _windowBits) - 1u);
 
     uint32_t *d_offsets = nullptr;
-    uint32_t *d_frags = nullptr;
+    uint32_t *d_fragments = nullptr;
     MatchRecord *d_out = nullptr;
     unsigned int *d_count = nullptr;
 
-    cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
-    cudaMalloc(&d_frags, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&d_offsets, offsetCount * sizeof(uint32_t));
+    cudaMalloc(&d_fragments, offsetCount * sizeof(uint32_t));
     cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
     cudaMalloc(&d_count, sizeof(unsigned int));
 
-    cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
-    std::vector<uint32_t> hostFrags(offsetsCount);
+    std::vector<uint32_t> hostFragments(offsetCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int i = 0; i < offsetsCount; ++i) {
+        for(unsigned int i = 0; i < offsetCount; ++i) {
             auto win = hashWindow(_targets[t].hash.data(), _offsets[i], _windowBits);
-            hostFrags[i] = win[0] & mask;
+            hostFragments[i] = win[0] & mask;
         }
-        cudaMemcpy(d_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_fragments, hostFragments.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
         cudaMemset(d_count, 0, sizeof(unsigned int));
 
         dim3 block(256);
         dim3 grid((range_len + block.x - 1) / block.x);
-        windowKernel<<<grid, block>>>(start_k, range_len, offsetsCount, d_offsets, mask, d_frags, d_out, d_count);
-        cudaError_t err = cudaGetLastError();
-        if(err != cudaSuccess) {
-            Logger::log(LogLevel::Error, std::string("windowKernel: ") + cudaGetErrorString(err));
-            break;
-        }
+        launchWindowKernel(grid, block, start_k, range_len, offsetCount, d_offsets, mask, d_fragments, d_out, d_count);
 
         unsigned int hCount = 0;
         cudaMemcpy(&hCount, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
@@ -616,7 +611,7 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     }
 
     cudaFree(d_offsets);
-    cudaFree(d_frags);
+    cudaFree(d_fragments);
     cudaFree(d_out);
     cudaFree(d_count);
 #else
