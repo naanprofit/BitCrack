@@ -643,14 +643,14 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
                        hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost));
         }
 
-        // Convert each hit into a CRT constraint and pass it back through the
-        // existing window processing path.  The CRT merge and final
-        // verification logic remain unchanged.
+        // Validate each matching candidate by computing its full hash.
         for(const auto &rec : hostBuf) {
-            uint32_t mod = 1u << (rec.offset + ws);
-            uint32_t rem = (rec.fragment << rec.offset) & (mod - 1);
-            Constraint c{uint256(mod), uint256(rem)};
-            processWindow(t, rec.offset, c);
+            uint256 priv(rec.k);
+            if(priv.cmp(L) < 0 || priv.cmp(U) > 0) {
+                continue;
+            }
+            ecpoint pub = multiplyPoint(priv, G());
+            enumerateCandidate(priv, pub);
         }
     }
 

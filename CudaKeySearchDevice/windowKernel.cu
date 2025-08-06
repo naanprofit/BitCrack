@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <cuda_runtime.h>
 #include <cstdio>
 
 #include "secp256k1.cuh"
@@ -169,11 +170,6 @@ __device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], ui
 
 // -----------------------------------------------------------------------------
 
-// ``windowKernel`` performs a simple grid-stride loop over the supplied scalar
-// range.  For each ``k`` it computes ``k * G`` and tests user supplied bit
-// windows of the X coordinate against the corresponding target fragments.  Any
-// match results in a ``MatchRecord`` being appended to ``out_buf`` via an
-// atomic counter.
 extern "C" __global__ void windowKernel(uint64_t start_k,
                                          uint64_t range_len,
                                          uint32_t ws,
@@ -211,7 +207,6 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
             }
             uint32_t frag = (uint32_t)val & mask;
             if(frag == target_frags[i]) {
-                // Record the matching fragment and the scalar ``k``.
                 uint32_t outIdx = atomicAdd(out_count, 1u);
                 out_buf[outIdx].offset   = off;
                 out_buf[outIdx].fragment = frag;
@@ -221,8 +216,6 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
     }
 }
 
-// Host wrapper used by C++ code.  It exposes the launch configuration so the
-// caller can tune grid and block sizes and performs basic CUDA error checking.
 extern "C" void launchWindowKernel(dim3 gridDim,
                                    dim3 blockDim,
                                    uint64_t start_k,
@@ -234,6 +227,7 @@ extern "C" void launchWindowKernel(dim3 gridDim,
                                    const uint32_t *target_frags,
                                    MatchRecord *out_buf,
                                    uint32_t *out_count) {
+    // Launch the kernel and check for launch/runtime errors.
     windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets,
                                         offsets_count, mask, target_frags,
                                         out_buf, out_count);
