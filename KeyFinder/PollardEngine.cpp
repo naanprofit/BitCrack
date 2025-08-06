@@ -604,8 +604,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         // Retrieve matches.
         uint32_t hitCount = 0;
         cudaMemcpy(&hitCount, dev_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        hitCount = std::min(hitCount, 1024u);
+
         std::vector<MatchRecord> hostBuf(hitCount);
-        if(hitCount) {
+        if(hitCount != 0) {
             cudaMemcpy(hostBuf.data(), dev_out,
                        hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
         }
