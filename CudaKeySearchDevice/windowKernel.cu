@@ -1,8 +1,6 @@
 #include <stdint.h>
 #include <cuda_runtime.h>
 #include <cstdio>
-#include <cstdlib>  // for getenv
-
 #include "secp256k1.cuh"
 #include "windowKernel.h"
 
@@ -183,6 +181,10 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
     uint64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
     uint64_t stride = gridDim.x * blockDim.x;
 
+    // ``ws`` is currently unused within the kernel body but kept in the
+    // signature for future extensions and to mirror the host launcher.
+    (void)ws;
+
     // Grid-stride loop over the scalar range.
     for(uint64_t idx = tid; idx < range_len; idx += stride) {
         uint64_t k = start_k + idx;
@@ -217,7 +219,9 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
     }
 }
 
-extern "C" void launchWindowKernel(uint64_t start_k,
+extern "C" void launchWindowKernel(dim3 grid,
+                                   dim3 block,
+                                   uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,
                                    const uint32_t *offsets,
@@ -226,27 +230,10 @@ extern "C" void launchWindowKernel(uint64_t start_k,
                                    const uint32_t *target_frags,
                                    MatchRecord *out_buf,
                                    uint32_t *out_count) {
-    // Determine launch configuration.  Defaults can be overridden using the
-    // environment variables WINDOW_KERNEL_BLOCKS and WINDOW_KERNEL_THREADS to
-    // ease experimentation without recompilation.
-    unsigned int threads = 256; // default threads per block
-    if(const char *env = std::getenv("WINDOW_KERNEL_THREADS")) {
-        unsigned int val = static_cast<unsigned int>(std::strtoul(env, nullptr, 10));
-        if(val > 0) threads = val;
-    }
-    unsigned int blocks = (range_len + threads - 1) / threads;
-    if(const char *env = std::getenv("WINDOW_KERNEL_BLOCKS")) {
-        unsigned int val = static_cast<unsigned int>(std::strtoul(env, nullptr, 10));
-        if(val > 0) blocks = val;
-    }
-
-    dim3 blockDim(threads);
-    dim3 gridDim(blocks);
-
     // Launch the kernel and check for launch/runtime errors.
-    windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets,
-                                        offsets_count, mask, target_frags,
-                                        out_buf, out_count);
+    windowKernel<<<grid, block>>>(start_k, range_len, ws, offsets,
+                                  offsets_count, mask, target_frags,
+                                  out_buf, out_count);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 }
