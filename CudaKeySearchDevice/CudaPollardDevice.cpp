@@ -160,7 +160,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     GpuPollardWindow *d_out = nullptr;
     uint32_t *d_count = nullptr;
-    uint32_t maxOut = static_cast<uint32_t>(steps * totalThreads);
+    uint32_t maxOut = std::min<uint32_t>(1024, static_cast<uint32_t>(steps * totalThreads));
     cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut);
     cudaMalloc(&d_count, sizeof(uint32_t));
     cudaMemset(d_count, 0, sizeof(uint32_t));
@@ -329,7 +329,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     GpuPollardWindow *d_out = nullptr;
     uint32_t *d_count = nullptr;
-    uint32_t maxOut = static_cast<uint32_t>(steps * totalThreads);
+    uint32_t maxOut = std::min<uint32_t>(1024, static_cast<uint32_t>(steps * totalThreads));
     cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut);
     cudaMalloc(&d_count, sizeof(uint32_t));
     cudaMemset(d_count, 0, sizeof(uint32_t));
