@@ -449,8 +449,8 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         for(uint32_t t = 0; t < windowBits; ++t) {
             cudaMemcpy(d_targets, targetFragments[t], offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
             cudaMemset(d_count, 0, sizeof(uint32_t));
-            launchWindowKernel(grid, block, chunkStart, range, offsetsCount,
-                               d_offsets, mask, d_targets, d_out, d_count);
+            launchWindowKernel(grid, block, chunkStart, range, windowBits,
+                               d_offsets, offsetsCount, mask, d_targets, d_out, d_count);
 
             uint32_t hCount = 0;
             cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
