@@ -32,7 +32,7 @@ endif
 
 all: $(OBJS)
 ifeq ($(BUILD_CUDA),1)
-;${NVCC} ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
+;${NVCC} -x cu ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
 else
 ;${CXX} ${CXXFLAGS} ${INCLUDE} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
 endif
@@ -44,7 +44,7 @@ cuda_scalar_one.o: cuda_scalar_one.cu
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 PollardEngine.o: ../KeyFinder/PollardEngine.cpp
-;${NVCC} -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+;${NVCC} -x cu -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
