@@ -154,10 +154,6 @@ __device__ static void scalarMultiplyBase(const uint32_t k[8], uint32_t rx[8], u
     pointAdd(r1x, r1y, r2x, r2y, rx, ry);
 }
 
-__device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], uint32_t Y[8]) {
-    scalarMultiplyBase(k, X, Y);
-}
-
 // GPU kernel performing a grid-stride loop over scalars ``k`` and extracting
 // window fragments from the x-coordinate of ``k * G``. Matching fragments are
 // appended to ``out_buf`` using an atomic counter.
@@ -172,7 +168,7 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
     for(uint64_t i = idx; i < range_len; i += stride) {
         uint64_t k = start_k + i;
         uint32_t X[8], Y[8];
-        point_mul_G(reinterpret_cast<const uint32_t*>(&k), X, Y);
+        scalarMultiplyBase(reinterpret_cast<const uint32_t*>(&k), X, Y);
         for(uint32_t j = 0; j < offsets_count; ++j) {
             uint32_t off  = offsets[j];
             uint32_t word = off >> 5;

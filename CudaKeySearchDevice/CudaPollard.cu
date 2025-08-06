@@ -321,10 +321,6 @@ __device__ static void scalarMultiplyBase(const unsigned int k[8], unsigned int 
     pointAdd(r1x, r1y, r2x, r2y, rx, ry);
 }
 
-__device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], uint32_t Y[8]) {
-    scalarMultiplyBase(k, X, Y);
-}
-
 // Legacy kernel retained for backwards compatibility. It performs a
 // random walk and records distinguished points (those where the low
 // ``windowBits`` bits of the scalar are zero), outputting the scalar and
