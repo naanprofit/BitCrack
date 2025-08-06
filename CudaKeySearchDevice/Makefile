@@ -11,12 +11,13 @@ cuda:
 ;rm -f *.o
 ;rm -f ${CUDA_MATH}/sha256_constants.cu.o ${CUDA_MATH}/ripemd160_constants.cu.o cuda_libs.o
 ;for file in ${CPPSRC} ; do\
-;   ${NVCC} -x cu -c $$file -o $$file".o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE};\
+;   base=$${file%.*}; \
+;   ${NVCC} -x cu -c $$file -o "$${base}.o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE};\
 ;done
 
 ;for file in ${CUSRC} ; do\
-;   base=$(basename $$file); \
-;   ${NVCC} -c $$file -o $$base".o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;   base=$${file%.*}; \
+;   ${NVCC} -c $$file -o "$${base}.o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
 ;for file in ${MATHSRC} ; do\
