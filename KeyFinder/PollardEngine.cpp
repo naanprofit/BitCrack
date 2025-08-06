@@ -623,10 +623,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         CUDA_CHECK(cudaMemcpy(dev_target_frags, hostFrags.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(dev_count, 0, sizeof(uint32_t)));
 
-        // Launch the GPU kernel.
-        dim3 block(256);
-        dim3 grid((range_len + block.x - 1) / block.x);
-        launchWindowKernel(grid, block, start_k, range_len, ws,
+        // Launch the GPU kernel to perform the window/fragment matching.  The
+        // kernel configuration can be adjusted at runtime via environment
+        // variables (see ``windowKernel.cu``).
+        launchWindowKernel(start_k, range_len, ws,
                            dev_offsets, offsetCount, mask,
                            dev_target_frags, dev_out, dev_count);
         CUDA_CHECK(cudaGetLastError());
@@ -643,14 +643,18 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
                        hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost));
         }
 
-        // Validate each matching candidate by computing its full hash.
+        // Convert GPU match records into CRT constraints.  The full private key
+        // candidates are validated later by ``processWindow`` which performs the
+        // CRT merge followed by hash160 verification.
         for(const auto &rec : hostBuf) {
             uint256 priv(rec.k);
             if(priv.cmp(L) < 0 || priv.cmp(U) > 0) {
-                continue;
+                continue; // discard matches outside the search interval
             }
-            ecpoint pub = multiplyPoint(priv, G());
-            enumerateCandidate(priv, pub);
+            uint32_t mod32 = 1u << (rec.offset + ws);
+            uint32_t rem32 = (rec.fragment << rec.offset) & (mod32 - 1u);
+            Constraint c{ uint256(mod32), uint256(rem32) };
+            processWindow(t, rec.offset, c);
         }
     }
 
