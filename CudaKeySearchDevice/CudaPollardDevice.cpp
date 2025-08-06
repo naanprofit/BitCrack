@@ -5,15 +5,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <stdexcept>
-#include <cstdio>
 #include "windowKernel.h"
-
-#define CUDA_CHECK(call) do { \
-    cudaError_t err__ = (call); \
-    if(err__ != cudaSuccess) { \
-        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err__)); \
-    } \
-} while(0)
 
 using namespace secp256k1;
 
@@ -408,12 +400,12 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     MatchRecord *d_out = nullptr;
     uint32_t *d_count = nullptr;
 
-    CUDA_CHECK(cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t)));
-    CUDA_CHECK(cudaMalloc(&d_targets, offsetsCount * sizeof(uint32_t)));
-    CUDA_CHECK(cudaMalloc(&d_out, sizeof(MatchRecord) * 1024));
-    CUDA_CHECK(cudaMalloc(&d_count, sizeof(uint32_t)));
+    cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&d_targets, offsetsCount * sizeof(uint32_t));
+    cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
+    cudaMalloc(&d_count, sizeof(uint32_t));
 
-    CUDA_CHECK(cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
+    cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<MatchRecord> hostOut(1024);
     std::unordered_set<uint32_t> seen;
@@ -455,17 +447,15 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         dim3 grid(gridSize);
 
         for(uint32_t t = 0; t < windowBits; ++t) {
-            CUDA_CHECK(cudaMemcpy(d_targets, targetFragments[t], offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemset(d_count, 0, sizeof(uint32_t)));
+            cudaMemcpy(d_targets, targetFragments[t], offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+            cudaMemset(d_count, 0, sizeof(uint32_t));
             launchWindowKernel(grid, block, chunkStart, range, windowBits,
                                d_offsets, offsetsCount, mask, d_targets, d_out, d_count);
-            CUDA_CHECK(cudaGetLastError());
-            CUDA_CHECK(cudaDeviceSynchronize());
 
             uint32_t hCount = 0;
-            CUDA_CHECK(cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
             if(hCount > hostOut.size()) hCount = hostOut.size();
-            CUDA_CHECK(cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost));
+            cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
 
             for(uint32_t i = 0; i < hCount; ++i) {
                 const MatchRecord &r = hostOut[i];
@@ -497,10 +487,10 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         }
     }
 
-    CUDA_CHECK(cudaFree(d_offsets));
-    CUDA_CHECK(cudaFree(d_targets));
-    CUDA_CHECK(cudaFree(d_out));
-    CUDA_CHECK(cudaFree(d_count));
+    cudaFree(d_offsets);
+    cudaFree(d_targets);
+    cudaFree(d_out);
+    cudaFree(d_count);
 }
 
 extern "C" bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
