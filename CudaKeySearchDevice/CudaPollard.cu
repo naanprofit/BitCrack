@@ -7,10 +7,6 @@
 #include "secp256k1.cuh" // EC point operations
 #include "ptx.cuh"       // byte order helpers
 
-// The original prototype ``windowKernel`` implementation used by early
-// experiments has been removed from this file.  A consolidated and reusable
-// version now lives in ``windowKernel.cu``.
-
 __device__ void hashPublicKeyCompressed(const uint32_t*, uint32_t, uint32_t*);
 
 #define CUDA_CHECK(call) do { \
