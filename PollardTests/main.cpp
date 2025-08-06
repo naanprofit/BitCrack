@@ -14,6 +14,7 @@
 
 #if BUILD_CUDA
 #include <cuda_runtime.h>
+#include "../CudaKeySearchDevice/CudaPollardDevice.h"
 bool runCudaScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]);
 bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
                          unsigned int bits, unsigned int out[5]);
@@ -863,6 +864,44 @@ bool testCRTMixedOffsetsPython() {
     return k0 == pyK && M == pyM;
 }
 
+bool testWindowCRT() {
+    using namespace secp256k1;
+    bool ran = false;
+    bool pass = true;
+#if BUILD_CUDA
+    int devCount = 0;
+    if(cudaGetDeviceCount(&devCount) == cudaSuccess && devCount > 0) {
+        ran = true;
+        uint64_t L = 0, U = 1000;
+        uint64_t key = 123;
+        unsigned int ws = 8;
+        std::vector<unsigned int> offsets = {0u, 8u};
+        ecpoint P = scalarMultiplyBase(key);
+        uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
+        uint32_t frags[2];
+        for(size_t i = 0; i < offsets.size(); ++i) {
+            frags[i] = (P.x.v[0] >> offsets[i]) & mask;
+        }
+        unsigned int be[5];
+        Hash::hashPublicKeyCompressed(P, be);
+        std::array<unsigned int,5> target;
+        for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
+        PollardEngine engine([](KeySearchResult){}, ws, offsets, {target}, uint256(L), uint256(U));
+        CudaPollardDevice dev(engine, ws, offsets, {target}, false);
+        std::vector<PollardEngine::Constraint> constraints;
+        dev.scanKeyRange(L, U + 1, ws, frags, constraints);
+        uint256 k0, M;
+        if(!engine.reconstruct(0, k0, M)) pass = false;
+        else if(k0.toUint64() != key) pass = false;
+    }
+#endif
+    if(!ran) {
+        std::cout << "window CRT gpu test skipped" << std::endl;
+        return true;
+    }
+    return pass;
+}
+
 int main(){
     int fails=0;
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
@@ -880,6 +919,7 @@ int main(){
     if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
+    if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
     } else {
