@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <map>
 #include <iomanip>
+#include <random>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -75,8 +76,9 @@ typedef struct {
     bool pollard = false;
     std::vector<unsigned int> offsets; // bit offsets for CRT windows
     uint32_t windowSize = 0;
-    uint32_t tames = 0;
-    uint32_t wilds = 0;
+    uint32_t workers = 1;
+    uint32_t tames = 0;       // number of tame workers
+    uint64_t maxSteps = 0;    // maximum steps per worker
     uint32_t pollBatch = 1024;
     uint32_t pollInterval = 100;
     bool full = false;
@@ -276,13 +278,14 @@ void usage()
     printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
     printf("--offsets LIST         Comma-separated bit offsets for CRT windows (required)\n");
     printf("--window-size N        Bits per window (default 8)\n");
-    printf("--tames N              Tame walk steps (0 disables)\n");
-    printf("--wilds N              Wild walk steps (0 disables)\n");
+    printf("--workers N            Total workers per round (default 1)\n");
+    printf("--tames N              Number of tame workers (default workers/2)\n");
+    printf("--max_steps N         Maximum steps per worker (default span)\n");
     printf("--poll-batch N        Windows processed per poll (default 1024)\n");
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
     printf("--grid-dim N          Override CUDA grid dimension (default auto)\n");
     printf("--block-dim N         Override CUDA block dimension (default auto)\n");
-    printf("--full                 Process entire keyspace\n");
+    printf("--full                 Relaunch walks until key is found\n");
     printf("--deterministic       Use sequential deterministic walks (still uses GPU kernels)\n");
     printf("--debug               Enable verbose Pollard debugging\n");
     printf("\nAt least one target must be specified via an address, --hash160, or --pubkey.\n");
@@ -533,9 +536,15 @@ int runPollard()
 
     unsigned int window = _config.windowSize ? _config.windowSize : 8;
     std::vector<unsigned int> offsets = _config.offsets;
-    uint64_t tameSteps = _config.tames;
-    uint64_t wildSteps = _config.wilds;
 
+    uint32_t workers = _config.workers ? _config.workers : 1;
+    uint32_t tameWorkers = _config.tames ? std::min(_config.tames, workers) : workers / 2;
+    uint32_t wildWorkers = workers > tameWorkers ? (workers - tameWorkers) : 0;
+
+    // Compute span for logging and default max steps
+    secp256k1::uint256 totalSpan256 = _config.endKey.sub(_config.startKey);
+    uint64_t totalSpan = totalSpan256.toUint64() + 1;
+    uint64_t maxStepsLog = _config.maxSteps ? std::min(_config.maxSteps, totalSpan) : totalSpan;
     std::vector<std::array<unsigned int,5>> targetHashes;
 
     if(!_config.targetsFile.empty()) {
@@ -587,8 +596,10 @@ int runPollard()
         Logger::log(LogLevel::Info, "Offsets: " + s);
     }
     Logger::log(LogLevel::Info, "Window size: " + util::format(window));
-    Logger::log(LogLevel::Info, "Tame walk steps: " + util::format(tameSteps));
-    Logger::log(LogLevel::Info, "Wild walk steps: " + util::format(wildSteps));
+    Logger::log(LogLevel::Info, "Workers: " + util::format(workers));
+    Logger::log(LogLevel::Info, "Tame workers: " + util::format(tameWorkers));
+    Logger::log(LogLevel::Info, "Wild workers: " + util::format(wildWorkers));
+    Logger::log(LogLevel::Info, "Max steps/worker: " + util::format(maxStepsLog));
     Logger::log(LogLevel::Info, "Poll batch: " + util::format(_config.pollBatch));
     Logger::log(LogLevel::Info, "Poll interval: " + util::format(_config.pollInterval) + " ms");
 
@@ -620,10 +631,18 @@ int runPollard()
 
     try {
         while(segmentStart.cmp(_config.endKey) <= 0) {
+            secp256k1::uint256 span256 = _config.endKey.sub(segmentStart);
+            uint64_t span = span256.toUint64() + 1;
+            uint64_t maxSteps = _config.maxSteps ? std::min(_config.maxSteps, span) : span;
+            uint64_t chunk = workers ? span / workers : span;
+            if(chunk == 0) {
+                chunk = 1;
+            }
+
             PollardEngine engine(resultCallback, window, offsets, targetHashes,
                                  segmentStart, _config.endKey,
                                  _config.pollBatch, _config.pollInterval,
-                                 _config.deterministic,
+                                 true,
                                  _config.debug);
 
 #ifdef BUILD_CUDA
@@ -640,12 +659,59 @@ int runPollard()
             }
 #endif
 
-            if(tameSteps > 0) {
-                engine.runTameWalk(segmentStart, tameSteps);
+            std::mt19937_64 rng(std::random_device{}());
+            while(!_resultFound) {
+                for(uint32_t i = 0; i < tameWorkers && !_resultFound; ++i) {
+                    secp256k1::uint256 st;
+                    uint64_t steps;
+                    if(_config.full || _config.tames) {
+                        uint64_t off = rng() % span;
+                        st = segmentStart.add(off);
+                        secp256k1::uint256 rem = _config.endKey.sub(st);
+                        uint64_t remSpan = rem.toUint64() + 1;
+                        steps = std::min<uint64_t>(maxSteps, remSpan);
+                    } else {
+                        uint64_t off = i * chunk;
+                        st = segmentStart.add(off);
+                        uint64_t rangeLen = std::min<uint64_t>(chunk, span - off);
+                        steps = std::min<uint64_t>(maxSteps, rangeLen);
+                    }
+                    engine.runTameWalk(st, steps);
+                    if(engine.allOffsetsFound()) break;
+                }
+
+                if(_resultFound || engine.allOffsetsFound()) {
+                    break;
+                }
+
+                for(uint32_t j = 0; j < wildWorkers && !_resultFound; ++j) {
+                    secp256k1::uint256 st;
+                    uint64_t steps;
+                    if(_config.full) {
+                        uint64_t off = rng() % span;
+                        st = segmentStart.add(off);
+                        uint64_t avail = st.sub(segmentStart).toUint64() + 1;
+                        steps = std::min<uint64_t>(maxSteps, avail);
+                    } else {
+                        uint64_t off = j * chunk;
+                        st = _config.endKey.sub(secp256k1::uint256(off));
+                        uint64_t avail = std::min<uint64_t>(chunk, st.sub(segmentStart).toUint64() + 1);
+                        steps = std::min<uint64_t>(maxSteps, avail);
+                    }
+                    engine.runWildWalk(st, steps);
+                    if(engine.allOffsetsFound()) break;
+                }
+
+                if(_resultFound || engine.allOffsetsFound() || !_config.full) {
+                    break;
+                }
+                Logger::log(LogLevel::Info, "no key found, relaunching walks...");
             }
 
-            if(wildSteps > 0) {
-                engine.runWildWalk(_config.endKey, wildSteps);
+            if(!_config.full && !engine.allOffsetsFound()) {
+                Logger::log(LogLevel::Error,
+                            "only " + util::format(engine.foundOffsets()) + "/" +
+                            util::format(engine.totalOffsets()) + " offsets found");
             }
 
             if(_resultFound) {
@@ -880,8 +946,9 @@ int main(int argc, char **argv)
     parser.add("", "--pollard", false);
     parser.add("", "--offsets", true);
     parser.add("", "--window-size", true);
+    parser.add("", "--workers", true);
     parser.add("", "--tames", true);
-    parser.add("", "--wilds", true);
+    parser.add("", "--max_steps", true);
     parser.add("", "--poll-batch", true);
     parser.add("", "--poll-interval", true);
     parser.add("", "--grid-dim", true);
@@ -1028,15 +1095,21 @@ int main(int argc, char **argv)
                 } catch(...) {
                     throw std::string("invalid argument");
                 }
+            } else if(optArg.equals("", "--workers")) {
+                try {
+                    _config.workers = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
             } else if(optArg.equals("", "--tames")) {
                 try {
                     _config.tames = util::parseUInt32(optArg.arg);
                 } catch(...) {
                     throw std::string("invalid argument");
                 }
-            } else if(optArg.equals("", "--wilds")) {
+            } else if(optArg.equals("", "--max_steps")) {
                 try {
-                    _config.wilds = util::parseUInt32(optArg.arg);
+                    _config.maxSteps = util::parseUInt64(optArg.arg);
                 } catch(...) {
                     throw std::string("invalid argument");
                 }

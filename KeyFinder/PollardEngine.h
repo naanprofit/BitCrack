@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include <cstdint>
+#include <cstddef>
 #include <array>
 #include <set>
 #include <memory>
@@ -87,6 +88,11 @@ public:
     // default a CPU implementation is used which enables unit tests to run
     // without a GPU.  Ownership of ``device`` is transferred to the engine.
     void setDevice(std::unique_ptr<PollardDevice> device);
+
+    // Progress helpers
+    bool allOffsetsFound() const;
+    size_t foundOffsets() const;
+    size_t totalOffsets() const;
 
     // Public wrapper exposing the internal hashWindow helper.  ``h`` must be
     // supplied in little-endian word order.  The returned array contains the
