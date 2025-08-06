@@ -166,32 +166,45 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
                   const uint32_t* offsets, uint32_t offsets_count,
                   uint32_t mask, const uint32_t* target_frags,
                   MatchRecord* out_buf, uint32_t* out_count) {
-    uint64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    (void)ws; // window size is encoded in mask on device
+    uint64_t idx    = blockIdx.x * blockDim.x + threadIdx.x;
     uint64_t stride = blockDim.x * gridDim.x;
     for(uint64_t i = idx; i < range_len; i += stride) {
         uint64_t k = start_k + i;
         uint32_t X[8], Y[8];
         point_mul_G(reinterpret_cast<const uint32_t*>(&k), X, Y);
         for(uint32_t j = 0; j < offsets_count; ++j) {
-            uint32_t frag = (X[0] >> offsets[j]) & mask;
-            if(frag == target_frags[j]) {
-                uint32_t pos = atomicAdd(out_count, 1u);
-                out_buf[pos] = { offsets[j], frag, k };
+            uint32_t off  = offsets[j];
+            uint32_t word = off >> 5;
+            uint32_t bit  = off & 31u;
+            uint32_t frag = 0;
+            if(word < 8) {
+                frag = X[word] >> bit;
+                if(bit && word + 1 < 8) {
+                    frag |= X[word + 1] << (32 - bit);
+                }
+                frag &= mask;
+                if(frag == target_frags[j]) {
+                    uint32_t pos = atomicAdd(out_count, 1u);
+                    out_buf[pos] = { off, frag, k };
+                }
             }
         }
     }
 }
 
-// Host wrapper used to launch ``windowKernel`` with error checking.
-extern "C" void launchWindowKernel(dim3 grid, dim3 block,
-                                   uint64_t start_k, uint64_t range_len,
+// Host wrapper used to launch ``windowKernel`` with basic error checking.
+extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
                                    uint32_t ws, const uint32_t* offsets,
                                    uint32_t offsets_count, uint32_t mask,
                                    const uint32_t* target_frags,
-                                   MatchRecord* out_buf, uint32_t* out_count) {
-    windowKernel<<<grid, block>>>(start_k, range_len, ws, offsets,
-                                  offsets_count, mask, target_frags,
-                                  out_buf, out_count);
+                                   MatchRecord* out_buf,
+                                   uint32_t* out_count) {
+    int threads = 256;
+    int blocks  = (range_len + threads - 1) / threads;
+    windowKernel<<<blocks, threads>>>(start_k, range_len, ws, offsets,
+                                      offsets_count, mask, target_frags,
+                                      out_buf, out_count);
     cudaError_t err = cudaGetLastError();
     if(err != cudaSuccess) {
         fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));

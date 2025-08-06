@@ -437,42 +437,15 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     cudaGetDevice(&dev);
     cudaGetDeviceProperties(&prop, dev);
 
-    unsigned int blockSize;
-    if(_blockDim) {
-        if(_blockDim % prop.warpSize != 0 || _blockDim > (unsigned)prop.maxThreadsPerBlock) {
-            throw std::runtime_error("invalid blockDim");
-        }
-        blockSize = _blockDim;
-    } else {
-        blockSize = prop.warpSize * 8;
-        if(blockSize > (unsigned)prop.maxThreadsPerBlock) {
-            blockSize = prop.maxThreadsPerBlock;
-        }
-    }
-
     uint64_t chunk = (1ULL << 32);
     for(uint64_t chunkStart = start_k; chunkStart < end_k && seen.size() < offsetsCount; chunkStart += chunk) {
         uint64_t range = std::min(chunk, end_k - chunkStart);
-        dim3 block(blockSize);
-        unsigned int gridSize;
-        if(_gridDim) {
-            if(_gridDim > (unsigned)prop.maxGridSize[0]) {
-                throw std::runtime_error("invalid gridDim");
-            }
-            gridSize = _gridDim;
-        } else {
-            gridSize = (range + block.x - 1) / block.x;
-            if(gridSize > (unsigned)prop.maxGridSize[0]) {
-                gridSize = prop.maxGridSize[0];
-            }
-        }
-        dim3 grid(gridSize);
 
         cudaMemset(d_count, 0, sizeof(uint32_t));
         err = cudaGetLastError();
         if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 #if BUILD_CUDA
-        launchWindowKernel(grid, block, chunkStart, range, windowBits,
+        launchWindowKernel(chunkStart, range, windowBits,
                            d_offsets, offsetsCount, mask, d_targets,
                            d_out, d_count);
 #endif
