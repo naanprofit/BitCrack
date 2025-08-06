@@ -4,23 +4,33 @@ CPPSRC=ConfigFile.cpp DeviceManager.cpp main.cpp
 CUSRC=PollardEngine.cpp \
       ../CudaKeySearchDevice/windowKernel.cu \
       ../CudaKeySearchDevice/CudaPollard.cu
+
 CUOBJ=$(patsubst %.cpp,%.o,$(patsubst %.cu,%.o,$(CUSRC)))
+
 
 .RECIPEPREFIX := ;
 
 all:
 ifeq ($(BUILD_CUDA), 1)
-;# Compile CUDA kernels with NVCC.  ``-x cu`` ensures the files are
-;# treated as CUDA sources even though they carry a ``.cu`` extension.
+;# Compile host sources (including PollardEngine.cpp) with NVCC so they are
+;# treated as CUDA translation units.
+;for file in $(CPPSRC) ; do \
+;  base=$${file%.cpp}; \
+;  ${NVCC} -x cu -c $$file -o $$base.o ${NVCCFLAGS} \
+;      -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
+;done
+;# Compile CUDA kernels with NVCC.
 ;for file in $(CUSRC) ; do \
+
 ;${NVCC} -x cu -c $$file -o $(patsubst %.cpp,%.o,$(patsubst %.cu,%.o,$$file)) ${NVCCFLAGS} \
 ;    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
+
 ;done
-;${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} $(CUOBJ) ${INCLUDE} \
-;    -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 \
-;    ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 \
-;    -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil \
-;    -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
+;${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin $(CPPOBJ) $(CUOBJ) \
+;    ../CudaKeySearchDevice/cuda_libs.o ${INCLUDE} -I${CUDA_INCLUDE} \
+;    ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${LIBS} -L${CUDA_LIB} \
+;    -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lcudautil -llogger \
+;    -lutil -lCudaKeySearchDevice -lcudart -lcudadevrt -lcmdparse
 ;mkdir -p $(BINDIR)
 ;cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
 endif
@@ -36,6 +46,6 @@ ifeq ($(CPU),1)
 endif
 
 clean:
-;rm -rf cuKeyFinder.bin $(CUOBJ)
+;rm -rf cuKeyFinder.bin $(CUOBJ) $(CPPOBJ)
 ;rm -rf clKeyFinder.bin
 ;rm -rf KeyFinder.bin

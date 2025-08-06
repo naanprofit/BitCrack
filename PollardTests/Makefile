@@ -28,14 +28,14 @@ ifeq ($(BUILD_OPENCL),1)
 LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB} -lCLKeySearchDevice
 endif
 ifeq ($(BUILD_CUDA),1)
-LIBS_LOCAL+=-lcudart -lcudadevrt -L${CUDA_LIB} -lCudaKeySearchDevice -lkeyfinder
+LIBS_LOCAL+=-lcudart -lcudadevrt -L${CUDA_LIB} -lCudaKeySearchDevice ${LIBDIR}/libkeyfinder.a
 endif
 
 all: $(OBJS)
 ifeq ($(BUILD_CUDA),1)
 ;${NVCC} ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin $(OBJS) ${LIBS} ${LIBS_LOCAL}
 else
-;${CXX} ${CXXFLAGS} ${INCLUDE} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
+;${CXX} ${CXXFLAGS} ${INCLUDE} -o pollardtests.bin $(CPPSRC) $(OBJS) ${LIBS} ${LIBS_LOCAL}
 endif
 ;mkdir -p $(BINDIR)
 ;cp pollardtests.bin $(BINDIR)/pollardtests
@@ -45,11 +45,17 @@ cuda_scalar_one.o: cuda_scalar_one.cu
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 main.o: main.cpp
+
 ;${NVCC} -c main.cpp -o main.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
+
 PollardEngine.o: ../KeyFinder/PollardEngine.cpp
-;${NVCC} -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+;${NVCC} -x cu -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
+CudaPollardDevice.o: ../CudaKeySearchDevice/CudaPollardDevice.cpp
+;${NVCC} -x cu -c ../CudaKeySearchDevice/CudaPollardDevice.cpp -o CudaPollardDevice.o ${NVCCFLAGS} -DBUILD_CUDA=1 \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 CudaPollardDevice.o: ../CudaKeySearchDevice/CudaPollardDevice.cpp
@@ -61,5 +67,7 @@ $(CUSRC:.cu=.o): %.o: %.cu
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
+
 ;rm -f pollardtests.bin cuda_scalar_one.o main.o PollardEngine.o CudaPollardDevice.o $(CUSRC:.cu=.o)
+
 

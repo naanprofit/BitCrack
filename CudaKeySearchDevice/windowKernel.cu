@@ -215,8 +215,10 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
     }
 }
 
+
 extern "C" void launchWindowKernel(dim3 grid,
                                    dim3 block,
+
                                    uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,
@@ -226,7 +228,7 @@ extern "C" void launchWindowKernel(dim3 grid,
                                    const uint32_t *target_frags,
                                    MatchRecord *out_buf,
                                    uint32_t *out_count) {
-    // Launch the kernel and check for launch/runtime errors.
+
     windowKernel<<<grid, block>>>(start_k, range_len, ws, offsets,
                                   offsets_count, mask, target_frags,
                                   out_buf, out_count);
