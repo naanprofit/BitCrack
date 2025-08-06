@@ -1,8 +1,6 @@
 NAME=CudaKeySearchDevice
 CPPSRC:=$(wildcard *.cpp)
-# ``windowKernel.cu`` is built and linked directly by the KeyFinder executable,
-# so exclude it from the device library to avoid duplicate definitions.
-CUSRC:=$(filter-out windowKernel.cu, $(wildcard *.cu))
+CUSRC:=$(wildcard *.cu)
 MATHSRC:=$(CUDA_MATH)/sha256_constants.cu $(CUDA_MATH)/ripemd160_constants.cu
 
 .RECIPEPREFIX := ;

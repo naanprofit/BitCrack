@@ -12,7 +12,6 @@
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"  // basic Pollard structures
 #if BUILD_CUDA
-// Interface to the lightweight GPU window matching kernel.
 #include "windowKernel.h"
 #endif
 
