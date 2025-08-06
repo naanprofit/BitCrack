@@ -16,11 +16,13 @@ ifeq ($(BUILD_CUDA), 1)
 ;${NVCC} -x cu -c $$file -o $(patsubst %.cpp,%.o,$(patsubst %.cu,%.o,$$file)) ${NVCCFLAGS} \
 ;    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
 ;done
-;${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} $(CUOBJ) ${INCLUDE} \
-;    -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 \
+;${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} $(CUOBJ) \
+;    ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} \
+;    -gencode=arch=compute_89,code=sm_89 \
 ;    ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 \
 ;    -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil \
-;    -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
+;    -lCudaKeySearchDevice ../CudaKeySearchDevice/cuda_libs.o \
+;    -lcudadevrt -lcudart -lcmdparse
 ;mkdir -p $(BINDIR)
 ;cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
 endif

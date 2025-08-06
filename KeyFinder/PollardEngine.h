@@ -11,11 +11,6 @@
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"  // basic Pollard structures
-#if BUILD_CUDA
-// ``windowKernel.h`` provides the MatchRecord structure and a host-side
-// launcher used when offloading window matching to CUDA.
-#include "windowKernel.h"
-#endif
 
 class PollardDevice {
 public:
@@ -59,7 +54,9 @@ public:
                   unsigned int batchSize = 1024,
                   unsigned int pollInterval = 100,
                   bool sequential = false,
-                  bool debug = false);
+                  bool debug = false,
+                  unsigned int gridDim = 0,
+                  unsigned int blockDim = 256);
 
     // Add a constraint of the form k \equiv value (mod ``modulus``) for ``target``
     void addConstraint(size_t target, const secp256k1::uint256 &modulus,
@@ -117,6 +114,8 @@ private:
     secp256k1::uint256 _U;                    // search upper bound
     bool _sequential;                         // sequential walk mode
     bool _debug;                              // enable verbose logging
+    unsigned int _gridDim;                   // launch grid for window kernel
+    unsigned int _blockDim;                  // block size for window kernel
 
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
