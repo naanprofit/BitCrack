@@ -21,10 +21,10 @@ struct MatchRecord {
     uint64_t k;        // scalar where the match occurred
 };
 
-// Host-side wrapper used to launch ``windowKernel`` from C++ code.  The block
-// and grid dimensions are chosen internally but can be influenced through
-// environment variables; see ``windowKernel.cu`` for details.
-extern "C" void launchWindowKernel(uint64_t start_k,
+// Host-side wrapper used to launch ``windowKernel`` from C++ code.
+extern "C" void launchWindowKernel(dim3 grid,
+                                   dim3 block,
+                                   uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,
                                    const uint32_t *offsets,
