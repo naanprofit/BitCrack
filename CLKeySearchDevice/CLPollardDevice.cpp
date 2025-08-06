@@ -6,6 +6,7 @@
 #include <string>
 #include <iostream>
 #include <cstdint>
+#include <algorithm>
 #include "clContext.h"
 #include "clutil.h"
 
@@ -127,7 +128,7 @@ void runWalk(PollardEngine &engine,
     cl_kernel kernel = clCreateKernel(program, "pollard_walk", &err);
     clCall(err);
 
-    cl_uint maxOut = static_cast<cl_uint>(steps * global);
+    cl_uint maxOut = static_cast<cl_uint>(std::min<uint64_t>(1024u, steps));
 
     cl_mem d_out = clCreateBuffer(ctx.getContext(), CL_MEM_WRITE_ONLY, sizeof(PollardWindowCL) * maxOut, NULL, &err);
     cl_mem d_count = clCreateBuffer(ctx.getContext(), CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &err);
