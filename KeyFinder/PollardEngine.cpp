@@ -569,51 +569,71 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     if(offsetCount == 0) {
         return;
     }
-    uint32_t mask = (_windowBits >= 32) ? 0xffffffffu : ((1u << _windowBits) - 1u);
+    uint32_t ws = _windowBits;
+    uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
 
-    uint32_t *d_offsets = nullptr;
-    uint32_t *d_fragments = nullptr;
-    MatchRecord *d_out = nullptr;
-    unsigned int *d_count = nullptr;
+    // Allocate GPU buffers.
+    uint32_t *dev_offsets = nullptr;
+    uint32_t *dev_target_frags = nullptr;
+    MatchRecord *dev_out = nullptr;
+    uint32_t *dev_count = nullptr;
+    cudaMalloc(&dev_offsets, offsetCount * sizeof(uint32_t));
+    cudaMalloc(&dev_target_frags, offsetCount * sizeof(uint32_t));
+    cudaMalloc(&dev_out, sizeof(MatchRecord) * 1024);
+    cudaMalloc(&dev_count, sizeof(uint32_t));
 
-    cudaMalloc(&d_offsets, offsetCount * sizeof(uint32_t));
-    cudaMalloc(&d_fragments, offsetCount * sizeof(uint32_t));
-    cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
-    cudaMalloc(&d_count, sizeof(unsigned int));
+    cudaMemcpy(dev_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
-    cudaMemcpy(d_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-
-    std::vector<uint32_t> hostFragments(offsetCount);
+    std::vector<uint32_t> hostFrags(offsetCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int i = 0; i < offsetCount; ++i) {
-            auto win = hashWindow(_targets[t].hash.data(), _offsets[i], _windowBits);
-            hostFragments[i] = win[0] & mask;
+        // Pre-compute the target fragments for this hash.
+        for(uint32_t i = 0; i < offsetCount; ++i) {
+            auto win = hashWindow(_targets[t].hash.data(), _offsets[i], ws);
+            hostFrags[i] = win[0] & mask;
         }
-        cudaMemcpy(d_fragments, hostFragments.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-        cudaMemset(d_count, 0, sizeof(unsigned int));
+        cudaMemcpy(dev_target_frags, hostFrags.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+        cudaMemset(dev_count, 0, sizeof(uint32_t));
 
+        // Launch the GPU kernel.
         dim3 block(256);
         dim3 grid((range_len + block.x - 1) / block.x);
-        launchWindowKernel(grid, block, start_k, range_len, offsetCount, d_offsets, mask, d_fragments, d_out, d_count);
+        launchWindowKernel(grid, block, start_k, range_len, ws,
+                           dev_offsets, offsetCount, mask,
+                           dev_target_frags, dev_out, dev_count);
 
-        unsigned int hCount = 0;
-        cudaMemcpy(&hCount, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
-        std::vector<MatchRecord> hostOut(hCount);
-        if(hCount) {
-            cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
+        // Retrieve matches.
+        uint32_t hitCount = 0;
+        cudaMemcpy(&hitCount, dev_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        std::vector<MatchRecord> hostBuf(hitCount);
+        if(hitCount) {
+            cudaMemcpy(hostBuf.data(), dev_out,
+                       hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
         }
 
-        for(const auto &r : hostOut) {
-            uint256 priv(r.k);
-            ecpoint pub = multiplyPoint(priv, G());
-            enumerateCandidate(priv, pub);
+        // Convert each record into a modulus/value constraint.
+        for(const auto &rec : hostBuf) {
+            uint32_t modBits = rec.offset + ws;
+            if(modBits > 256) continue;
+
+            Constraint c;
+            c.modulus = secp256k1::uint256(0);
+            if(modBits < 256) {
+                c.modulus.v[modBits / 32] = (1u << (modBits % 32));
+            }
+            uint64_t v = ((uint64_t)rec.fragment << rec.offset) &
+                         ((modBits == 64 ? 0xffffffffffffffffULL :
+                           ((1ULL << modBits) - 1ULL)));
+            c.value = secp256k1::uint256(0);
+            c.value.v[0] = (uint32_t)(v & 0xffffffffULL);
+            c.value.v[1] = (uint32_t)(v >> 32);
+            _targets[t].constraints.push_back(c);
         }
     }
 
-    cudaFree(d_offsets);
-    cudaFree(d_fragments);
-    cudaFree(d_out);
-    cudaFree(d_count);
+    cudaFree(dev_offsets);
+    cudaFree(dev_target_frags);
+    cudaFree(dev_out);
+    cudaFree(dev_count);
 #else
     for(; k.cmp(U) <= 0; k = k.add(modulus)) {
         ecpoint pub = multiplyPoint(k, G());

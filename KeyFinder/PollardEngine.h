@@ -10,7 +10,7 @@
 #include <chrono>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
-#include "PollardTypes.h"  // for MatchRecord
+#include "PollardTypes.h"  // basic Pollard structures
 #if BUILD_CUDA
 #include "windowKernel.h"
 #endif
