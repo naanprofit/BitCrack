@@ -631,23 +631,14 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
                        hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost));
         }
 
-        // Convert each record into a modulus/value constraint.
+        // Validate each matching candidate by computing its full hash.
         for(const auto &rec : hostBuf) {
-            uint32_t modBits = rec.offset + ws;
-            if(modBits > 256) continue;
-
-            Constraint c;
-            c.modulus = secp256k1::uint256(0);
-            if(modBits < 256) {
-                c.modulus.v[modBits / 32] = (1u << (modBits % 32));
+            uint256 priv(rec.k);
+            if(priv.cmp(L) < 0 || priv.cmp(U) > 0) {
+                continue;
             }
-            uint64_t v = ((uint64_t)rec.fragment << rec.offset) &
-                         ((modBits == 64 ? 0xffffffffffffffffULL :
-                           ((1ULL << modBits) - 1ULL)));
-            c.value = secp256k1::uint256(0);
-            c.value.v[0] = (uint32_t)(v & 0xffffffffULL);
-            c.value.v[1] = (uint32_t)(v >> 32);
-            _targets[t].constraints.push_back(c);
+            ecpoint pub = multiplyPoint(priv, G());
+            enumerateCandidate(priv, pub);
         }
     }
 
