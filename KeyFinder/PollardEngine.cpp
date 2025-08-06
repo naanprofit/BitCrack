@@ -370,10 +370,13 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int batchSize,
                              unsigned int pollInterval,
                              bool sequential,
-                             bool debug)
+                             bool debug,
+                             unsigned int gridDim,
+                             unsigned int blockDim)
     : _callback(cb), _windowBits(windowBits), _offsets(offsets),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
-      _sequential(sequential), _debug(debug) {
+      _sequential(sequential), _debug(debug),
+      _gridDim(gridDim), _blockDim(blockDim) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -624,8 +627,11 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         CUDA_CHECK(cudaMemset(dev_count, 0, sizeof(uint32_t)));
 
         // Launch the GPU kernel to perform the window/fragment matching.
-        dim3 block(256);
-        dim3 grid((range_len + block.x - 1) / block.x);
+        unsigned int blockSize = _blockDim ? _blockDim : 256u;
+        dim3 block(blockSize);
+        unsigned int gridSize = _gridDim ? _gridDim :
+                               (unsigned int)((range_len + block.x - 1) / block.x);
+        dim3 grid(gridSize);
         launchWindowKernel(grid, block, start_k, range_len, ws,
                            dev_offsets, offsetCount, mask,
                            dev_target_frags, dev_out, dev_count);
