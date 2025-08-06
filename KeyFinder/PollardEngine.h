@@ -116,14 +116,6 @@ private:
     bool _sequential;                         // sequential walk mode
     bool _debug;                              // enable verbose logging
 
-#if BUILD_CUDA
-    // GPU buffers for window kernel results
-    uint32_t *_d_offsets = nullptr;
-    uint32_t *_d_frags = nullptr;
-    MatchRecord *_d_out = nullptr;
-    unsigned int *_d_count = nullptr;
-#endif
-
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
     uint64_t _reconstructionAttempts = 0;     // number of CRT solves attempted

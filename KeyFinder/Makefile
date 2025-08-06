@@ -1,23 +1,40 @@
 CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
+# CUDA kernels that must be linked directly into the executable when building
+# the CUDA variant.
+CUSRC=../CudaKeySearchDevice/windowKernel.cu \
+      ../CudaKeySearchDevice/CudaPollard.cu
+CUOBJ=$(CUSRC:.cu=.o)
+
+.RECIPEPREFIX := ;
 
 all:
 ifeq ($(BUILD_CUDA), 1)
-	${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
-	mkdir -p $(BINDIR)
-	cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
+;# Compile CUDA kernels with NVCC.  ``-x cu`` ensures the files are
+;# treated as CUDA sources even though they carry a ``.cu`` extension.
+;for file in $(CUSRC) ; do \
+;${NVCC} -x cu -c $$file -o $${file}.o ${NVCCFLAGS} \
+;    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
+;done
+;${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} $(CUOBJ) ${INCLUDE} \
+;    -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 \
+;    ${LIBS} -L${CUDA_LIB} -lkeyfinder -laddressutil -lsecp256k1 \
+;    -lcryptoutil -lsecp256k1 -lcudautil -llogger -lutil \
+;    -lCudaKeySearchDevice -lcudadevrt -lcudart -lcmdparse
+;mkdir -p $(BINDIR)
+;cp cuKeyFinder.bin $(BINDIR)/cuBitCrack
 endif
 ifeq ($(BUILD_OPENCL),1)
-	${CXX} -DBUILD_OPENCL -o clKeyFinder.bin ${CPPSRC} ${INCLUDE} -I${OPENCL_INCLUDE} ${CXXFLAGS} ${LIBS} -L${OPENCL_LIB} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lsecp256k1 -lCLKeySearchDevice -lclutil -lOpenCL -llogger -lutil -lcmdparse
-	mkdir -p $(BINDIR)
-	cp clKeyFinder.bin $(BINDIR)/clBitCrack
+;${CXX} -DBUILD_OPENCL -o clKeyFinder.bin ${CPPSRC} ${INCLUDE} -I${OPENCL_INCLUDE} ${CXXFLAGS} ${LIBS} -L${OPENCL_LIB} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lsecp256k1 -lCLKeySearchDevice -lclutil -lOpenCL -llogger -lutil -lcmdparse
+;mkdir -p $(BINDIR)
+;cp clKeyFinder.bin $(BINDIR)/clBitCrack
 endif
 ifeq ($(CPU),1)
-	${CXX} -o KeyFinder.bin ${CPPSRC} ${INCLUDE} ${CXXFLAGS} ${LIBS} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -llogger -lutil -lcmdparse -pthread
-	mkdir -p $(BINDIR)
-	cp KeyFinder.bin $(BINDIR)/BitCrack
+;${CXX} -o KeyFinder.bin ${CPPSRC} ${INCLUDE} ${CXXFLAGS} ${LIBS} -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -llogger -lutil -lcmdparse -pthread
+;mkdir -p $(BINDIR)
+;cp KeyFinder.bin $(BINDIR)/BitCrack
 endif
 
 clean:
-	rm -rf cuKeyFinder.bin
-	rm -rf clKeyFinder.bin
-	rm -rf KeyFinder.bin
+;rm -rf cuKeyFinder.bin $(CUOBJ)
+;rm -rf clKeyFinder.bin
+;rm -rf KeyFinder.bin
