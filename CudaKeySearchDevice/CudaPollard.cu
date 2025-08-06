@@ -6,8 +6,8 @@
 #include "ripemd160.cuh" // RIPEMD160 finalisation
 #include "secp256k1.cuh" // EC point operations
 #include "ptx.cuh"       // byte order helpers
-// Note: the dedicated window matching kernel now lives in ``windowKernel.cu``.
-// This file only contains the Pollard walk implementations.
+// The standalone window matching kernel resides in ``windowKernel.cu``.  This
+// translation unit focuses solely on the Pollard walk implementations.
 
 __device__ void hashPublicKeyCompressed(const uint32_t*, uint32_t, uint32_t*);
 

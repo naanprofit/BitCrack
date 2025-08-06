@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <cuda_runtime.h>
 #include <cstdio>
-
 #include "secp256k1.cuh"
 #include "windowKernel.h"
 
@@ -216,7 +215,10 @@ extern "C" __global__ void windowKernel(uint64_t start_k,
     }
 }
 
-extern "C" void launchWindowKernel(dim3 grid, dim3 block,
+
+extern "C" void launchWindowKernel(dim3 grid,
+                                   dim3 block,
+
                                    uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,
@@ -226,6 +228,7 @@ extern "C" void launchWindowKernel(dim3 grid, dim3 block,
                                    const uint32_t *target_frags,
                                    MatchRecord *out_buf,
                                    uint32_t *out_count) {
+
     windowKernel<<<grid, block>>>(start_k, range_len, ws, offsets,
                                   offsets_count, mask, target_frags,
                                   out_buf, out_count);

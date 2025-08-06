@@ -12,6 +12,8 @@
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"  // basic Pollard structures
 #if BUILD_CUDA
+// ``windowKernel.h`` provides the MatchRecord structure and a host-side
+// launcher used when offloading window matching to CUDA.
 #include "windowKernel.h"
 #endif
 

@@ -9,9 +9,11 @@
 #include "windowKernel.h"
 
 #define CUDA_CHECK(call) do { \
-    cudaError_t err__ = (call); \
-    if(err__ != cudaSuccess) { \
-        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err__)); \
+
+    cudaError_t err = (call); \
+    if(err != cudaSuccess) { \
+        throw std::runtime_error(cudaGetErrorString(err)); \
+
     } \
 } while(0)
 
@@ -89,8 +91,8 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     // Determine launch configuration based on device capabilities
     cudaDeviceProp prop;
     int dev = 0;
-    cudaGetDevice(&dev);
-    cudaGetDeviceProperties(&prop, dev);
+    CUDA_CHECK(cudaGetDevice(&dev));
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
 
     unsigned int threadsPerBlock;
     if(_blockDim) {
@@ -133,12 +135,12 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     uint32_t *d_seeds = nullptr;
     uint32_t *d_starts = nullptr;
     uint32_t *d_stride = nullptr;
-    cudaMalloc(&d_seeds, sizeof(uint32_t) * totalThreads * 8);
-    cudaMalloc(&d_starts, sizeof(uint32_t) * totalThreads * 8);
-    cudaMalloc(&d_stride, sizeof(uint32_t) * totalThreads * 8);
-    cudaMemcpy(d_seeds, h_seeds.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_starts, h_starts.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMalloc(&d_seeds, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMalloc(&d_starts, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMalloc(&d_stride, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMemcpy(d_seeds, h_seeds.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_starts, h_starts.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
 
     // Prepare target windows
     std::vector<GpuTargetWindow> h_windows;
@@ -157,19 +159,19 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     uint32_t windowCount = static_cast<uint32_t>(h_windows.size());
     GpuTargetWindow *d_windows = nullptr;
     if(windowCount > 0) {
-        cudaMalloc(&d_windows, sizeof(GpuTargetWindow) * windowCount);
-        cudaMemcpy(d_windows, h_windows.data(), sizeof(GpuTargetWindow) * windowCount, cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaMalloc(&d_windows, sizeof(GpuTargetWindow) * windowCount));
+        CUDA_CHECK(cudaMemcpy(d_windows, h_windows.data(), sizeof(GpuTargetWindow) * windowCount, cudaMemcpyHostToDevice));
     }
 
     GpuPollardWindow *d_out = nullptr;
     uint32_t *d_count = nullptr;
     uint32_t maxOut = static_cast<uint32_t>(steps * totalThreads);
-    cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut);
-    cudaMalloc(&d_count, sizeof(uint32_t));
-    cudaMemset(d_count, 0, sizeof(uint32_t));
+    CUDA_CHECK(cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut));
+    CUDA_CHECK(cudaMalloc(&d_count, sizeof(uint32_t)));
+    CUDA_CHECK(cudaMemset(d_count, 0, sizeof(uint32_t)));
 
     cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    CUDA_CHECK(cudaStreamCreate(&stream));
     pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
                                                        d_seeds, d_starts,
                                                        nullptr, nullptr,
@@ -179,9 +181,9 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     uint32_t h_count = 0;
-    cudaMemcpyAsync(&h_count, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-    cudaMemcpyAsync(h_out.data(), d_out, sizeof(GpuPollardWindow) * maxOut, cudaMemcpyDeviceToHost, stream);
-    cudaStreamSynchronize(stream);
+    CUDA_CHECK(cudaMemcpyAsync(&h_count, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(h_out.data(), d_out, sizeof(GpuPollardWindow) * maxOut, cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
@@ -220,7 +222,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     cudaFree(d_starts);
     cudaFree(d_stride);
     if(d_windows) cudaFree(d_windows);
-    cudaStreamDestroy(stream);
+    CUDA_CHECK(cudaStreamDestroy(stream));
 }
 
 void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
@@ -228,8 +230,8 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     // Determine launch configuration similar to tame walk
     cudaDeviceProp prop;
     int dev = 0;
-    cudaGetDevice(&dev);
-    cudaGetDeviceProperties(&prop, dev);
+    CUDA_CHECK(cudaGetDevice(&dev));
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
 
     unsigned int threadsPerBlock;
     if(_blockDim) {
@@ -296,16 +298,16 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     uint32_t *d_startX = nullptr;
     uint32_t *d_startY = nullptr;
     uint32_t *d_stride = nullptr;
-    cudaMalloc(&d_seeds, sizeof(uint32_t) * totalThreads * 8);
-    cudaMalloc(&d_starts, sizeof(uint32_t) * totalThreads * 8);
-    cudaMalloc(&d_startX, sizeof(uint32_t) * totalThreads * 8);
-    cudaMalloc(&d_startY, sizeof(uint32_t) * totalThreads * 8);
-    cudaMalloc(&d_stride, sizeof(uint32_t) * totalThreads * 8);
-    cudaMemcpy(d_seeds, h_seeds.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_starts, h_starts.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_startX, h_startX.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_startY, h_startY.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMalloc(&d_seeds, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMalloc(&d_starts, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMalloc(&d_startX, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMalloc(&d_startY, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMalloc(&d_stride, sizeof(uint32_t) * totalThreads * 8));
+    CUDA_CHECK(cudaMemcpy(d_seeds, h_seeds.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_starts, h_starts.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_startX, h_startX.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_startY, h_startY.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice));
 
     // Prepare target windows
     std::vector<GpuTargetWindow> h_windows;
@@ -324,19 +326,19 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     uint32_t windowCount = static_cast<uint32_t>(h_windows.size());
     GpuTargetWindow *d_windows = nullptr;
     if(windowCount > 0) {
-        cudaMalloc(&d_windows, sizeof(GpuTargetWindow) * windowCount);
-        cudaMemcpy(d_windows, h_windows.data(), sizeof(GpuTargetWindow) * windowCount, cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaMalloc(&d_windows, sizeof(GpuTargetWindow) * windowCount));
+        CUDA_CHECK(cudaMemcpy(d_windows, h_windows.data(), sizeof(GpuTargetWindow) * windowCount, cudaMemcpyHostToDevice));
     }
 
     GpuPollardWindow *d_out = nullptr;
     uint32_t *d_count = nullptr;
     uint32_t maxOut = static_cast<uint32_t>(steps * totalThreads);
-    cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut);
-    cudaMalloc(&d_count, sizeof(uint32_t));
-    cudaMemset(d_count, 0, sizeof(uint32_t));
+    CUDA_CHECK(cudaMalloc(&d_out, sizeof(GpuPollardWindow) * maxOut));
+    CUDA_CHECK(cudaMalloc(&d_count, sizeof(uint32_t)));
+    CUDA_CHECK(cudaMemset(d_count, 0, sizeof(uint32_t)));
 
     cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    CUDA_CHECK(cudaStreamCreate(&stream));
     pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
                                                        d_seeds, d_starts,
                                                        d_startX, d_startY,
@@ -346,9 +348,9 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     uint32_t h_count = 0;
-    cudaMemcpyAsync(&h_count, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
-    cudaMemcpyAsync(h_out.data(), d_out, sizeof(GpuPollardWindow) * maxOut, cudaMemcpyDeviceToHost, stream);
-    cudaStreamSynchronize(stream);
+    CUDA_CHECK(cudaMemcpyAsync(&h_count, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(h_out.data(), d_out, sizeof(GpuPollardWindow) * maxOut, cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
@@ -389,7 +391,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     cudaFree(d_startY);
     cudaFree(d_stride);
     if(d_windows) cudaFree(d_windows);
-    cudaStreamDestroy(stream);
+    CUDA_CHECK(cudaStreamDestroy(stream));
 }
 
 void CudaPollardDevice::scanKeyRange(uint64_t start_k,
@@ -420,8 +422,8 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
 
     cudaDeviceProp prop;
     int dev = 0;
-    cudaGetDevice(&dev);
-    cudaGetDeviceProperties(&prop, dev);
+    CUDA_CHECK(cudaGetDevice(&dev));
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
 
     unsigned int blockSize;
     if(_blockDim) {

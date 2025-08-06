@@ -1,10 +1,12 @@
-CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
-# CUDA kernels that must be linked directly into the executable when building
-# the CUDA variant.
-CUSRC=../CudaKeySearchDevice/windowKernel.cu \
+CPPSRC=ConfigFile.cpp DeviceManager.cpp main.cpp
+# Sources compiled with NVCC when BUILD_CUDA=1 (``-x cu`` handles both .cu and
+# .cpp files in this list)
+CUSRC=PollardEngine.cpp \
+      ../CudaKeySearchDevice/windowKernel.cu \
       ../CudaKeySearchDevice/CudaPollard.cu
-CUOBJ=$(CUSRC:.cu=.o)
-CPPOBJ=$(CPPSRC:.cpp=.o)
+
+CUOBJ=$(patsubst %.cpp,%.o,$(patsubst %.cu,%.o,$(CUSRC)))
+
 
 .RECIPEPREFIX := ;
 
@@ -19,8 +21,10 @@ ifeq ($(BUILD_CUDA), 1)
 ;done
 ;# Compile CUDA kernels with NVCC.
 ;for file in $(CUSRC) ; do \
-;  ${NVCC} -x cu -c $$file -o $$file.o ${NVCCFLAGS} \
-;      -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
+
+;${NVCC} -x cu -c $$file -o $(patsubst %.cpp,%.o,$(patsubst %.cu,%.o,$$file)) ${NVCCFLAGS} \
+;    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I../cudaMath ; \
+
 ;done
 ;${NVCC} -DBUILD_CUDA -o cuKeyFinder.bin $(CPPOBJ) $(CUOBJ) \
 ;    ../CudaKeySearchDevice/cuda_libs.o ${INCLUDE} -I${CUDA_INCLUDE} \

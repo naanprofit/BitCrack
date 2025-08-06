@@ -21,10 +21,11 @@ struct MatchRecord {
     uint64_t k;        // scalar where the match occurred
 };
 
-// Host-side wrapper used to launch `windowKernel` from C++ code.  Grid and
-// block dimensions are supplied explicitly so callers can control launch
-// configuration without pulling in CUDA headers when BUILD_CUDA is disabled.
-extern "C" void launchWindowKernel(dim3 grid, dim3 block,
+
+// Host-side wrapper used to launch ``windowKernel`` from C++ code.
+extern "C" void launchWindowKernel(dim3 grid,
+                                   dim3 block,
+
                                    uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,

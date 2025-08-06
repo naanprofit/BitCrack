@@ -45,8 +45,10 @@ cuda_scalar_one.o: cuda_scalar_one.cu
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 main.o: main.cpp
-;${NVCC} -x cu -c main.cpp -o main.o ${NVCCFLAGS} \
-    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
+;${NVCC} -c main.cpp -o main.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
 
 PollardEngine.o: ../KeyFinder/PollardEngine.cpp
 ;${NVCC} -x cu -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
@@ -56,10 +58,16 @@ CudaPollardDevice.o: ../CudaKeySearchDevice/CudaPollardDevice.cpp
 ;${NVCC} -x cu -c ../CudaKeySearchDevice/CudaPollardDevice.cpp -o CudaPollardDevice.o ${NVCCFLAGS} -DBUILD_CUDA=1 \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
+CudaPollardDevice.o: ../CudaKeySearchDevice/CudaPollardDevice.cpp
+;${NVCC} -c ../CudaKeySearchDevice/CudaPollardDevice.cpp -o CudaPollardDevice.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
 $(CUSRC:.cu=.o): %.o: %.cu
 ;${NVCC} -x cu -c $< -o $@ ${NVCCFLAGS} \
     -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
-;rm -f pollardtests.bin main.o cuda_scalar_one.o PollardEngine.o CudaPollardDevice.o $(CUSRC:.cu=.o)
+
+;rm -f pollardtests.bin cuda_scalar_one.o main.o PollardEngine.o CudaPollardDevice.o $(CUSRC:.cu=.o)
+
 
