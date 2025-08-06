@@ -609,7 +609,7 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
             auto &r = hostBuf[i];
             uint32_t mod = 1u << (r.offset + _windowBits);
             uint32_t rem = (r.fragment << r.offset) & (mod - 1);
-            constraints.emplace_back(mod, rem);
+            constraints.push_back({secp256k1::uint256(mod), secp256k1::uint256(rem)});
         }
         for(uint32_t i = 0; i < hitCount; ++i) {
             processWindow(t, hostBuf[i].offset, constraints[i]);
