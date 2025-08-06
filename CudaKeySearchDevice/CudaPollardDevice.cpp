@@ -445,7 +445,10 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         err = cudaGetLastError();
         if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 #if BUILD_CUDA
-        launchWindowKernel(chunkStart, range, windowBits,
+        unsigned int threads = _blockDim ? _blockDim : 256u;
+        unsigned int blocks  = _gridDim ? _gridDim : static_cast<unsigned int>((range + threads - 1) / threads);
+        launchWindowKernel(dim3(blocks), dim3(threads),
+                           chunkStart, range, windowBits,
                            d_offsets, offsetsCount, mask, d_targets,
                            d_out, d_count);
 #endif

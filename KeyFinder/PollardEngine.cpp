@@ -609,7 +609,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         cudaMemcpy(dev_target_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
         cudaMemset(dev_out_count, 0, sizeof(uint32_t));
 
-        launchWindowKernel(start_k, range_len, _windowBits,
+        int threads = 256;
+        int blocks  = (range_len + threads - 1) / threads;
+        launchWindowKernel(dim3(blocks), dim3(threads),
+                           start_k, range_len, _windowBits,
                            dev_offsets, offsetsCount, mask,
                            dev_target_frags, dev_out_buf, dev_out_count);
 

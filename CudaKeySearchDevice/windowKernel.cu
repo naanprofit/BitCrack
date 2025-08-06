@@ -1,6 +1,7 @@
+#include <cstdio>
+#include <cstdlib>
 #include <stdint.h>
 #include <cuda_runtime.h>
-#include <cstdio>
 
 #include "secp256k1.cuh"
 #include "windowKernel.h"
@@ -162,9 +163,9 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
                   const uint32_t* offsets, uint32_t offsets_count,
                   uint32_t mask, const uint32_t* target_frags,
                   MatchRecord* out_buf, uint32_t* out_count) {
-    (void)ws; // window size is encoded in mask on device
+    (void)ws; // window size encoded in mask
     uint64_t idx    = blockIdx.x * blockDim.x + threadIdx.x;
-    uint64_t stride = blockDim.x * gridDim.x;
+    uint64_t stride = gridDim.x * blockDim.x;
     for(uint64_t i = idx; i < range_len; i += stride) {
         uint64_t k = start_k + i;
         uint32_t X[8], Y[8];
@@ -190,21 +191,20 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
 }
 
 // Host wrapper used to launch ``windowKernel`` with basic error checking.
-extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
+extern "C" void launchWindowKernel(dim3 grid, dim3 block,
+                                   uint64_t start_k, uint64_t range_len,
                                    uint32_t ws, const uint32_t* offsets,
                                    uint32_t offsets_count, uint32_t mask,
                                    const uint32_t* target_frags,
                                    MatchRecord* out_buf,
                                    uint32_t* out_count) {
-    int threads = 256;
-    int blocks  = (range_len + threads - 1) / threads;
-    windowKernel<<<blocks, threads>>>(start_k, range_len, ws, offsets,
-                                      offsets_count, mask, target_frags,
-                                      out_buf, out_count);
+    windowKernel<<<grid, block>>>(start_k, range_len, ws, offsets,
+                                  offsets_count, mask, target_frags,
+                                  out_buf, out_count);
     cudaError_t err = cudaGetLastError();
     if(err != cudaSuccess) {
-        fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));
-        exit(1);
+        fprintf(stderr, "windowKernel launch failed: %s\n", cudaGetErrorString(err));
+        std::exit(1);
     }
 }
 
