@@ -17,7 +17,7 @@ BINDIR?=.
 
 OBJS=
 ifeq ($(BUILD_CUDA),1)
-OBJS+=cuda_scalar_one.o PollardEngine.o
+OBJS+=cuda_scalar_one.o PollardEngine.o main.o windowKernel.o
 endif
 
 CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
@@ -32,7 +32,7 @@ endif
 
 all: $(OBJS)
 ifeq ($(BUILD_CUDA),1)
-;${NVCC} ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
+;${NVCC} ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} -o pollardtests.bin $(OBJS) ${LIBS} ${LIBS_LOCAL}
 else
 ;${CXX} ${CXXFLAGS} ${INCLUDE} -o pollardtests.bin ${CPPSRC} $(OBJS) ${LIBS} ${LIBS_LOCAL}
 endif
@@ -46,6 +46,14 @@ cuda_scalar_one.o: cuda_scalar_one.cu
 PollardEngine.o: ../KeyFinder/PollardEngine.cpp
 ;${NVCC} -c ../KeyFinder/PollardEngine.cpp -o PollardEngine.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
     ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
+main.o: main.cpp
+;${NVCC} -c main.cpp -o main.o ${NVCCFLAGS} -DBUILD_CUDA=1 -DBUILD_OPENCL=$(BUILD_OPENCL) \
+    ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+
+windowKernel.o: ../CudaKeySearchDevice/windowKernel.cu
+;${NVCC} -c ../CudaKeySearchDevice/windowKernel.cu -o windowKernel.o ${NVCCFLAGS} \
+    -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
 
 clean:
 ;rm -f pollardtests.bin cuda_scalar_one.o PollardEngine.o

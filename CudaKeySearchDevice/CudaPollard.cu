@@ -7,6 +7,10 @@
 #include "secp256k1.cuh" // EC point operations
 #include "ptx.cuh"       // byte order helpers
 
+// The legacy ``windowKernel`` previously lived in this translation unit.  It
+// has been moved to ``windowKernel.cu`` to avoid duplicate definitions and keep
+// this file focused on the Pollard walk kernels.
+
 __device__ void hashPublicKeyCompressed(const uint32_t*, uint32_t, uint32_t*);
 
 #define CUDA_CHECK(call) do { \
