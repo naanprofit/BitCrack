@@ -3,14 +3,17 @@
 #include <cstdio>
 
 #include "secp256k1.cuh"
-#include "../KeyFinder/PollardTypes.h"
+#include "windowKernel.h"
 
+// Simple CUDA error checking macro used throughout this file.
 #define CUDA_CHECK(call) do { \
     cudaError_t err = (call); \
     if(err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+        printf("CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
     } \
 } while(0)
+
+// -- EC helper routines ------------------------------------------------------
 
 __device__ static inline bool isZero256(const uint32_t a[8]) {
     for(int i = 0; i < 8; ++i) {
@@ -165,40 +168,49 @@ __device__ static inline void point_mul_G(const uint32_t k[8], uint32_t X[8], ui
     scalarMultiplyBase(k, X, Y);
 }
 
+// -----------------------------------------------------------------------------
+
 extern "C" __global__ void windowKernel(uint64_t start_k,
                                          uint64_t range_len,
-                                         int ws,
+                                         uint32_t ws,
                                          const uint32_t *offsets,
+                                         uint32_t offsets_count,
                                          uint32_t mask,
                                          const uint32_t *target_frags,
                                          MatchRecord *out_buf,
-                                         unsigned int *out_count) {
+                                         uint32_t *out_count) {
     uint64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
     uint64_t stride = gridDim.x * blockDim.x;
 
+    // Grid-stride loop over the scalar range.
     for(uint64_t idx = tid; idx < range_len; idx += stride) {
         uint64_t k = start_k + idx;
+
+        // Convert ``k`` into the little-endian 256-bit representation expected
+        // by the secp256k1 routines.
         uint32_t scalar[8] = {0};
         scalar[0] = (uint32_t)(k & 0xffffffffULL);
         scalar[1] = (uint32_t)(k >> 32);
+
         uint32_t X[8];
         uint32_t Y[8];
         point_mul_G(scalar, X, Y);
 
-        for(int i = 0; i < ws; ++i) {
+        // Examine each requested window.
+        for(uint32_t i = 0; i < offsets_count; ++i) {
             uint32_t off = offsets[i];
             uint32_t word = off >> 5;
-            uint32_t bit = off & 31U;
+            uint32_t bit  = off & 31U;
             uint64_t val = ((uint64_t)X[word]) >> bit;
             if(bit && word < 7) {
                 val |= ((uint64_t)X[word + 1]) << (32 - bit);
             }
             uint32_t frag = (uint32_t)val & mask;
             if(frag == target_frags[i]) {
-                unsigned int out_idx = atomicAdd(out_count, 1u);
-                out_buf[out_idx].offset = off;
-                out_buf[out_idx].fragment = frag;
-                out_buf[out_idx].k = k;
+                uint32_t outIdx = atomicAdd(out_count, 1u);
+                out_buf[outIdx].offset   = off;
+                out_buf[outIdx].fragment = frag;
+                out_buf[outIdx].k        = k;
             }
         }
     }
@@ -208,15 +220,17 @@ extern "C" void launchWindowKernel(dim3 gridDim,
                                    dim3 blockDim,
                                    uint64_t start_k,
                                    uint64_t range_len,
-                                   int ws,
+                                   uint32_t ws,
                                    const uint32_t *offsets,
+                                   uint32_t offsets_count,
                                    uint32_t mask,
                                    const uint32_t *target_frags,
                                    MatchRecord *out_buf,
-                                   unsigned int *out_count)
-{
-    windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets, mask,
-                                        target_frags, out_buf, out_count);
+                                   uint32_t *out_count) {
+    // Launch the kernel and check for launch/runtime errors.
+    windowKernel<<<gridDim, blockDim>>>(start_k, range_len, ws, offsets,
+                                        offsets_count, mask, target_frags,
+                                        out_buf, out_count);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 }

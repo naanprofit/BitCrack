@@ -28,12 +28,6 @@ struct PollardWindow {
     secp256k1::uint256 scalarFragment;       // full scalar at the match
 };
 
-// Compact record emitted by ``windowKernel`` during key range scans. Each
-// entry captures the window offset, the extracted fragment of the x-coordinate
-// and the corresponding scalar ``k`` where the match occurred.
-struct MatchRecord {
-    uint32_t offset;   // bit offset within the x-coordinate
-    uint32_t fragment; // extracted window fragment
-    uint64_t k;        // scalar at the match
-};
+// ``MatchRecord`` has moved to ``windowKernel.h`` to avoid polluting this
+// header with GPU specific details.
 #endif
