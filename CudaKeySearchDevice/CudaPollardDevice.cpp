@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include "windowKernel.h"
+#include <cstdio>
 
 using namespace secp256k1;
 
@@ -401,12 +402,24 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     uint32_t *d_count = nullptr;
 
     cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
+    cudaError_t err = cudaGetLastError();
+    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
     cudaMalloc(&d_targets, offsetsCount * sizeof(uint32_t));
+    err = cudaGetLastError();
+    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
     cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
     cudaMalloc(&d_count, sizeof(uint32_t));
+    err = cudaGetLastError();
+    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 
     cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
     cudaMemcpy(d_targets, targetFragments, offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 
     std::vector<MatchRecord> hostOut(1024);
     std::unordered_set<uint32_t> seen;
@@ -448,14 +461,20 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         dim3 grid(gridSize);
 
         cudaMemset(d_count, 0, sizeof(uint32_t));
-        launchWindowKernel(chunkStart, range, windowBits,
+        err = cudaGetLastError();
+        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+        launchWindowKernel(grid, block, chunkStart, range, windowBits,
                            d_offsets, offsetsCount, mask, d_targets,
-                           d_out, d_count, grid, block);
+                           d_out, d_count);
 
         uint32_t hCount = 0;
         cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        err = cudaGetLastError();
+        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
         if(hCount > hostOut.size()) hCount = hostOut.size();
         cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
+        err = cudaGetLastError();
+        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 
         for(uint32_t i = 0; i < hCount; ++i) {
             const MatchRecord &r = hostOut[i];

@@ -1,5 +1,5 @@
 NAME=PollardTests
-CPPSRC=main.cpp ../KeyFinder/PollardEngine.cpp
+CPPSRC=main.cpp ../KeyFinder/PollardEngine.cpp ../CudaKeySearchDevice/CudaPollardDevice.cpp
 CUDASRC=cuda_scalar_one.cu
 BINDIR?=.
 
@@ -27,12 +27,15 @@ endif
 
 all: $(OBJS)
 ifeq ($(BUILD_CUDA),1)
-;${NVCC} -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${LIBS} ${LIBS_LOCAL}
+;${NVCC} -x cu -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} ${LIBS} ${LIBS_LOCAL}
 else
 ;${CXX} -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} ${CXXFLAGS} ${LIBS} ${LIBS_LOCAL}
 endif
 ;mkdir -p $(BINDIR)
 ;cp pollardtests.bin $(BINDIR)/pollardtests
+
+pollard-tests: all
+;$(BINDIR)/pollardtests
 
 cuda_scalar_one.o: cuda_scalar_one.cu
 ;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
