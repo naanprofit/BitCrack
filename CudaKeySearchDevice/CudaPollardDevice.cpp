@@ -5,15 +5,12 @@
 #include <unordered_set>
 #include <algorithm>
 #include <stdexcept>
-#include <cstdio>
 #include "windowKernel.h"
 
 #define CUDA_CHECK(call) do { \
-
     cudaError_t err = (call); \
     if(err != cudaSuccess) { \
         throw std::runtime_error(cudaGetErrorString(err)); \
-
     } \
 } while(0)
 
@@ -461,8 +458,6 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
             CUDA_CHECK(cudaMemset(d_count, 0, sizeof(uint32_t)));
             launchWindowKernel(grid, block, chunkStart, range, windowBits,
                                d_offsets, offsetsCount, mask, d_targets, d_out, d_count);
-            CUDA_CHECK(cudaGetLastError());
-            CUDA_CHECK(cudaDeviceSynchronize());
 
             uint32_t hCount = 0;
             CUDA_CHECK(cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost));
@@ -499,10 +494,10 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         }
     }
 
-    CUDA_CHECK(cudaFree(d_offsets));
-    CUDA_CHECK(cudaFree(d_targets));
-    CUDA_CHECK(cudaFree(d_out));
-    CUDA_CHECK(cudaFree(d_count));
+    cudaFree(d_offsets);
+    cudaFree(d_targets);
+    cudaFree(d_out);
+    cudaFree(d_count);
 }
 
 extern "C" bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,

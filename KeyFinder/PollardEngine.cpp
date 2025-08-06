@@ -2,8 +2,8 @@
 #include "secp256k1.h"
 #include "AddressUtil.h"
 #if BUILD_CUDA
-#include "windowKernel.h"
 #include <cuda_runtime.h>
+#include "windowKernel.h"
 #include <cstdio>
 #define CUDA_CHECK(call) do { \
     cudaError_t err__ = (call); \
@@ -613,11 +613,6 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     CUDA_CHECK(cudaMalloc(&dev_out, sizeof(MatchRecord) * 1024));
     CUDA_CHECK(cudaMalloc(&dev_count, sizeof(uint32_t)));
 
-    // Kernel launch configuration.  Block size is fixed while the grid is
-    // sized to cover the requested range.
-    dim3 block(256);
-    dim3 grid((range_len + block.x - 1) / block.x);
-
     CUDA_CHECK(cudaMemcpy(dev_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
     for(size_t t = 0; t < _targets.size(); ++t) {
         // Pre-compute the target fragments for this hash.
@@ -629,10 +624,8 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         CUDA_CHECK(cudaMemset(dev_count, 0, sizeof(uint32_t)));
 
         // Launch the GPU kernel to perform the window/fragment matching.
-
         dim3 block(256);
         dim3 grid((range_len + block.x - 1) / block.x);
-
         launchWindowKernel(grid, block, start_k, range_len, ws,
                            dev_offsets, offsetCount, mask,
                            dev_target_frags, dev_out, dev_count);

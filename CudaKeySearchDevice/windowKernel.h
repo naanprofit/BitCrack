@@ -3,10 +3,12 @@
 
 #include <cstdint>
 
-// When this header is consumed by a non-CUDA translation unit the `dim3`
-// type normally provided by `cuda_runtime.h` is absent.  Provide a minimal
-// substitute so callers can still compile without pulling in CUDA headers.
-#ifndef __CUDACC__
+#ifdef __CUDACC__
+#include <cuda_runtime.h>
+#else
+// When compiled without CUDA support the ``dim3`` type provided by
+// ``cuda_runtime.h`` is unavailable.  Supply a lightweight substitute so the
+// launcher prototype below remains valid in host-only builds.
 struct dim3 {
     unsigned int x, y, z;
     dim3(unsigned int a = 1u, unsigned int b = 1u, unsigned int c = 1u)
@@ -14,18 +16,16 @@ struct dim3 {
 };
 #endif
 
-// Minimal record emitted by `windowKernel` describing a matching window.
+// Minimal record emitted by ``windowKernel`` describing a matching window.
 struct MatchRecord {
     uint32_t offset;   // bit offset of the window
     uint32_t fragment; // extracted fragment of the x-coordinate
     uint64_t k;        // scalar where the match occurred
 };
 
-
 // Host-side wrapper used to launch ``windowKernel`` from C++ code.
 extern "C" void launchWindowKernel(dim3 grid,
                                    dim3 block,
-
                                    uint64_t start_k,
                                    uint64_t range_len,
                                    uint32_t ws,
