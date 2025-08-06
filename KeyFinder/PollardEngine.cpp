@@ -4,6 +4,14 @@
 #include "windowKernel.h"
 #if BUILD_CUDA
 #include <cuda_runtime.h>
+#include <cstdio>
+#define CUDA_CHECK(call) do { \
+    cudaError_t err__ = (call); \
+    if (err__ != cudaSuccess) { \
+        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err__)); \
+        if(!cuda_cleanup_in_progress) goto cuda_cleanup; \
+    } \
+} while(0)
 #endif
 #include <algorithm>
 #include <cstring>
@@ -573,16 +581,17 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
 
     // Allocate GPU buffers.
+    bool cuda_cleanup_in_progress = false;
     uint32_t *dev_offsets = nullptr;
     uint32_t *dev_target_frags = nullptr;
     MatchRecord *dev_out = nullptr;
     uint32_t *dev_count = nullptr;
-    cudaMalloc(&dev_offsets, offsetCount * sizeof(uint32_t));
-    cudaMalloc(&dev_target_frags, offsetCount * sizeof(uint32_t));
-    cudaMalloc(&dev_out, sizeof(MatchRecord) * 1024);
-    cudaMalloc(&dev_count, sizeof(uint32_t));
+    CUDA_CHECK(cudaMalloc(&dev_offsets, offsetCount * sizeof(uint32_t)));
+    CUDA_CHECK(cudaMalloc(&dev_target_frags, offsetCount * sizeof(uint32_t)));
+    CUDA_CHECK(cudaMalloc(&dev_out, sizeof(MatchRecord) * 1024));
+    CUDA_CHECK(cudaMalloc(&dev_count, sizeof(uint32_t)));
 
-    cudaMemcpy(dev_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy(dev_offsets, _offsets.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
 
     std::vector<uint32_t> hostFrags(offsetCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
@@ -591,8 +600,8 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
             auto win = hashWindow(_targets[t].hash.data(), _offsets[i], ws);
             hostFrags[i] = win[0] & mask;
         }
-        cudaMemcpy(dev_target_frags, hostFrags.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-        cudaMemset(dev_count, 0, sizeof(uint32_t));
+        CUDA_CHECK(cudaMemcpy(dev_target_frags, hostFrags.data(), offsetCount * sizeof(uint32_t), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemset(dev_count, 0, sizeof(uint32_t)));
 
         // Launch the GPU kernel.
         dim3 block(256);
@@ -600,16 +609,18 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         launchWindowKernel(grid, block, start_k, range_len, ws,
                            dev_offsets, offsetCount, mask,
                            dev_target_frags, dev_out, dev_count);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         // Retrieve matches.
         uint32_t hitCount = 0;
-        cudaMemcpy(&hitCount, dev_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        CUDA_CHECK(cudaMemcpy(&hitCount, dev_count, sizeof(uint32_t), cudaMemcpyDeviceToHost));
         hitCount = std::min(hitCount, 1024u);
 
         std::vector<MatchRecord> hostBuf(hitCount);
         if(hitCount != 0) {
-            cudaMemcpy(hostBuf.data(), dev_out,
-                       hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
+            CUDA_CHECK(cudaMemcpy(hostBuf.data(), dev_out,
+                       hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost));
         }
 
         // Convert each record into a modulus/value constraint.
@@ -632,10 +643,15 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         }
     }
 
-    cudaFree(dev_offsets);
-    cudaFree(dev_target_frags);
-    cudaFree(dev_out);
-    cudaFree(dev_count);
+    goto cuda_cleanup;
+
+cuda_cleanup:
+    cuda_cleanup_in_progress = true;
+    CUDA_CHECK(cudaFree(dev_offsets));
+    CUDA_CHECK(cudaFree(dev_target_frags));
+    CUDA_CHECK(cudaFree(dev_out));
+    CUDA_CHECK(cudaFree(dev_count));
+    return;
 #else
     for(; k.cmp(U) <= 0; k = k.add(modulus)) {
         ecpoint pub = multiplyPoint(k, G());
