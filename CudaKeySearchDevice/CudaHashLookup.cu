@@ -24,41 +24,6 @@ __constant__ unsigned long long _BLOOM_FILTER_MASK64[1];
 
 __constant__ unsigned int _USE_BLOOM_FILTER[1];
 
-// Simple 160-bit container represented as five 32-bit little-endian words.
-struct Hash160 {
-        uint32_t v[5];
-};
-
-// Extract ``bits`` bits starting at ``offset`` from a little-endian hash. The
-// result is returned as five 32-bit words with any unused high words cleared.
-__device__ static Hash160 hashWindow(const uint32_t h[5], uint32_t offset, uint32_t bits)
-{
-        Hash160 out;
-        for(int i = 0; i < 5; ++i) {
-                out.v[i] = 0u;
-        }
-        uint32_t word = offset / 32;
-        uint32_t bit  = offset % 32;
-        uint32_t words = (bits + 31) / 32;
-        for(uint32_t i = 0; i < words && word + i < 5; ++i) {
-                uint64_t val = ((uint64_t)h[word + i]) >> bit;
-                if(bit && word + i + 1 < 5) {
-                        val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
-                }
-                out.v[i] = (uint32_t)(val & 0xffffffffULL);
-        }
-        uint32_t maskBits = bits % 32;
-        if(maskBits) {
-                uint32_t mask = (1u << maskBits) - 1u;
-                out.v[words - 1] &= mask;
-        }
-        for(uint32_t i = words; i < 5; ++i) {
-                out.v[i] = 0u;
-        }
-        return out;
-}
-
-
 static void undoRMD160FinalRound(const unsigned int hIn[5], unsigned int hOut[5])
 {
         // RIPEMD160 initial values used in the final round
