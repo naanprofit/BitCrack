@@ -1,5 +1,8 @@
 NAME=PollardTests
-CPPSRC=main.cpp ../KeyFinder/PollardEngine.cpp ../CudaKeySearchDevice/CudaPollardDevice.cpp
+CPPSRC=main.cpp ../KeyFinder/PollardEngine.cpp
+ifeq ($(BUILD_CUDA),1)
+CPPSRC+= ../CudaKeySearchDevice/CudaPollardDevice.cpp
+endif
 CUDASRC=cuda_scalar_one.cu
 BINDIR?=.
 

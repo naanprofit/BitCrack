@@ -1,5 +1,7 @@
 #include "CudaPollardDevice.h"
+#if BUILD_CUDA
 #include <cuda_runtime.h>
+#endif
 #include <vector>
 #include <cstring>
 #include <unordered_set>
@@ -55,6 +57,7 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
 // scalar.  Optional starting points can be supplied for wild walks.  When
 // ``stride`` is non-zero, a deterministic sequential walk is performed where
 // each thread increments by ``stride`` instead of a random step.
+#if BUILD_CUDA
 extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        uint32_t *outCount,
                                        uint32_t maxOut,
@@ -66,6 +69,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
                                        const GpuTargetWindow *windows,
                                        uint32_t windowCount,
                                        const uint32_t *stride);
+#endif
 
 CudaPollardDevice::CudaPollardDevice(PollardEngine &engine,
                                      unsigned int windowBits,
@@ -163,12 +167,14 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
+#if BUILD_CUDA
     pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
                                                        d_seeds, d_starts,
                                                        nullptr, nullptr,
                                                        static_cast<uint32_t>(steps),
                                                        d_windows, windowCount,
                                                        d_stride);
+#endif
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     uint32_t h_count = 0;
@@ -330,12 +336,14 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
+#if BUILD_CUDA
     pollardWalk<<<blocks, threadsPerBlock, 0, stream>>>(d_out, d_count, maxOut,
                                                        d_seeds, d_starts,
                                                        d_startX, d_startY,
                                                        static_cast<uint32_t>(steps),
                                                        d_windows, windowCount,
                                                        d_stride);
+#endif
 
     std::vector<GpuPollardWindow> h_out(maxOut);
     uint32_t h_count = 0;
@@ -463,9 +471,11 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         cudaMemset(d_count, 0, sizeof(uint32_t));
         err = cudaGetLastError();
         if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+#if BUILD_CUDA
         launchWindowKernel(grid, block, chunkStart, range, windowBits,
                            d_offsets, offsetsCount, mask, d_targets,
                            d_out, d_count);
+#endif
 
         uint32_t hCount = 0;
         cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
