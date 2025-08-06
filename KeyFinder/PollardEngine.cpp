@@ -574,40 +574,45 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     uint32_t *d_offsets = nullptr;
     uint32_t *d_frags = nullptr;
     MatchRecord *d_out = nullptr;
-    unsigned int *d_count = nullptr;
+    uint32_t *d_count = nullptr;
 
+    // Allocate device buffers
     cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
     cudaMalloc(&d_frags, offsetsCount * sizeof(uint32_t));
     cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
-    cudaMalloc(&d_count, sizeof(unsigned int));
+    cudaMalloc(&d_count, sizeof(uint32_t));
 
+    // Upload offset positions once
     cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
+        // Build target fragments for this target and upload
         for(unsigned int i = 0; i < offsetsCount; ++i) {
             auto win = hashWindow(_targets[t].hash.data(), _offsets[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
         cudaMemcpy(d_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-        cudaMemset(d_count, 0, sizeof(unsigned int));
+        cudaMemset(d_count, 0, sizeof(uint32_t));
 
-        dim3 block(256);
+        // Configurable launch dimensions
+        unsigned int blockSize = 256;
+        dim3 block(blockSize);
         dim3 grid((range_len + block.x - 1) / block.x);
-        windowKernel<<<grid, block>>>(start_k, range_len, offsetsCount, d_offsets, mask, d_frags, d_out, d_count);
-        cudaError_t err = cudaGetLastError();
-        if(err != cudaSuccess) {
-            Logger::log(LogLevel::Error, std::string("windowKernel: ") + cudaGetErrorString(err));
-            break;
-        }
 
-        unsigned int hCount = 0;
-        cudaMemcpy(&hCount, d_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+        // Launch kernel via wrapper
+        launchWindowKernel(start_k, range_len, _windowBits,
+                           d_offsets, offsetsCount, mask, d_frags,
+                           d_out, d_count, grid, block);
+
+        uint32_t hCount = 0;
+        cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
         std::vector<MatchRecord> hostOut(hCount);
         if(hCount) {
             cudaMemcpy(hostOut.data(), d_out, hCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
         }
 
+        // Compute full hashes for any matches found by the GPU
         for(const auto &r : hostOut) {
             uint256 priv(r.k);
             ecpoint pub = multiplyPoint(priv, G());

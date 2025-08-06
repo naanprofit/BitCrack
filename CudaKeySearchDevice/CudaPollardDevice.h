@@ -46,7 +46,7 @@ public:
     void scanKeyRange(uint64_t start_k,
                       uint64_t end_k,
                       uint32_t windowBits,
-                      const uint32_t targetFragments[][MAX_OFFSETS],
+                      const uint32_t *targetFragments,
                       std::vector<PollardEngine::Constraint> &outConstraints);
 };
 

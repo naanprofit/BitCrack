@@ -5,21 +5,9 @@
 #include <unordered_set>
 #include <algorithm>
 #include <stdexcept>
-
+#include "windowKernel.h"
 
 using namespace secp256k1;
-
-extern "C" void launchWindowKernel(dim3 gridDim,
-                                    dim3 blockDim,
-                                    uint64_t start_k,
-                                    uint64_t range_length,
-                                    uint32_t ws,
-                                    const uint32_t *offsets,
-                                    uint32_t offsets_count,
-                                    uint32_t mask,
-                                    const uint32_t target_fragments[][MAX_OFFSETS],
-                                    MatchRecord *out_buffer,
-                                    uint32_t *out_count);
 
 struct GpuPollardWindow {
     uint32_t targetIdx;
@@ -399,7 +387,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 void CudaPollardDevice::scanKeyRange(uint64_t start_k,
                                      uint64_t end_k,
                                      uint32_t windowBits,
-                                     const uint32_t targetFragments[][MAX_OFFSETS],
+                                     const uint32_t *targetFragments,
                                      std::vector<PollardEngine::Constraint> &outConstraints) {
     uint32_t offsetsCount = static_cast<uint32_t>(_offsets.size());
     if(offsetsCount == 0 || windowBits == 0) {
@@ -408,17 +396,17 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     uint32_t mask = (windowBits >= 32) ? 0xffffffffu : ((1u << windowBits) - 1u);
 
     uint32_t *d_offsets = nullptr;
-    uint32_t (*d_targets)[MAX_OFFSETS] = nullptr;
+    uint32_t *d_targets = nullptr;
     MatchRecord *d_out = nullptr;
     uint32_t *d_count = nullptr;
 
     cudaMalloc(&d_offsets, offsetsCount * sizeof(uint32_t));
-    cudaMalloc(&d_targets, windowBits * MAX_OFFSETS * sizeof(uint32_t));
+    cudaMalloc(&d_targets, offsetsCount * sizeof(uint32_t));
     cudaMalloc(&d_out, sizeof(MatchRecord) * 1024);
     cudaMalloc(&d_count, sizeof(uint32_t));
 
     cudaMemcpy(d_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_targets, targetFragments, windowBits * MAX_OFFSETS * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_targets, targetFragments, offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<MatchRecord> hostOut(1024);
     std::unordered_set<uint32_t> seen;
@@ -460,8 +448,9 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         dim3 grid(gridSize);
 
         cudaMemset(d_count, 0, sizeof(uint32_t));
-        launchWindowKernel(grid, block, chunkStart, range, windowBits,
-                           d_offsets, offsetsCount, mask, d_targets, d_out, d_count);
+        launchWindowKernel(chunkStart, range, windowBits,
+                           d_offsets, offsetsCount, mask, d_targets,
+                           d_out, d_count, grid, block);
 
         uint32_t hCount = 0;
         cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);

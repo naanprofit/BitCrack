@@ -22,11 +22,15 @@ ifeq ($(BUILD_OPENCL),1)
 LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB} -lCLKeySearchDevice
 endif
 ifeq ($(BUILD_CUDA),1)
-LIBS_LOCAL+=-lcudart -L${CUDA_LIB} -lCudaKeySearchDevice
+LIBS_LOCAL+=-L${CUDA_LIB} -lCudaKeySearchDevice -lcudadevrt -lcudart -lkeyfinder
 endif
 
 all: $(OBJS)
+ifeq ($(BUILD_CUDA),1)
+;${NVCC} -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${LIBS} ${LIBS_LOCAL}
+else
 ;${CXX} -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} ${CXXFLAGS} ${LIBS} ${LIBS_LOCAL}
+endif
 ;mkdir -p $(BINDIR)
 ;cp pollardtests.bin $(BINDIR)/pollardtests
 
