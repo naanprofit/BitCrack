@@ -1,9 +1,9 @@
-#include <stdint.h>
-#include <cuda_runtime.h>
 #include <cstdio>
+#include <cstdlib>
+#include <cuda_runtime.h>
+#include "windowKernel.h"
 
 #include "secp256k1.cuh"
-#include "windowKernel.h"
 
 __device__ static inline bool isZero256(const uint32_t a[8]) {
     for(int i = 0; i < 8; ++i) {
@@ -190,17 +190,16 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
 }
 
 // Host wrapper used to launch ``windowKernel`` with basic error checking.
-extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
+extern "C" void launchWindowKernel(dim3 grid, dim3 block,
+                                   uint64_t start_k, uint64_t range_len,
                                    uint32_t ws, const uint32_t* offsets,
                                    uint32_t offsets_count, uint32_t mask,
                                    const uint32_t* target_frags,
                                    MatchRecord* out_buf,
                                    uint32_t* out_count) {
-    int threads = 256;
-    int blocks  = (range_len + threads - 1) / threads;
-    windowKernel<<<blocks, threads>>>(start_k, range_len, ws, offsets,
-                                      offsets_count, mask, target_frags,
-                                      out_buf, out_count);
+    windowKernel<<<grid, block>>>(start_k, range_len, ws, offsets,
+                                  offsets_count, mask, target_frags,
+                                  out_buf, out_count);
     cudaError_t err = cudaGetLastError();
     if(err != cudaSuccess) {
         fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));

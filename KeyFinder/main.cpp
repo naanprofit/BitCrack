@@ -78,6 +78,7 @@ typedef struct {
     uint32_t windowSize = 0;
     uint32_t workers = 1;
     uint32_t tames = 0;       // number of tame workers
+    uint32_t wilds = 0;       // number of wild workers
     uint64_t maxSteps = 0;    // maximum steps per worker
     uint32_t pollBatch = 1024;
     uint32_t pollInterval = 100;
@@ -280,6 +281,7 @@ void usage()
     printf("--window-size N        Bits per window (default 8)\n");
     printf("--workers N            Total workers per round (default 1)\n");
     printf("--tames N              Number of tame workers (default workers/2)\n");
+    printf("--wilds N              Number of wild workers (default workers-tames)\n");
     printf("--max_steps N         Maximum steps per worker (default span)\n");
     printf("--poll-batch N        Windows processed per poll (default 1024)\n");
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
@@ -539,7 +541,13 @@ int runPollard()
 
     uint32_t workers = _config.workers ? _config.workers : 1;
     uint32_t tameWorkers = _config.tames ? std::min(_config.tames, workers) : workers / 2;
-    uint32_t wildWorkers = workers > tameWorkers ? (workers - tameWorkers) : 0;
+    uint32_t wildWorkers;
+    if(_config.wilds) {
+        uint32_t maxWild = workers > tameWorkers ? (workers - tameWorkers) : 0;
+        wildWorkers = std::min(_config.wilds, maxWild);
+    } else {
+        wildWorkers = workers > tameWorkers ? (workers - tameWorkers) : 0;
+    }
 
     // Compute span for logging and default max steps
     secp256k1::uint256 totalSpan256 = _config.endKey.sub(_config.startKey);
@@ -948,6 +956,7 @@ int main(int argc, char **argv)
     parser.add("", "--window-size", true);
     parser.add("", "--workers", true);
     parser.add("", "--tames", true);
+    parser.add("", "--wilds", true);
     parser.add("", "--max_steps", true);
     parser.add("", "--poll-batch", true);
     parser.add("", "--poll-interval", true);
@@ -1104,6 +1113,12 @@ int main(int argc, char **argv)
             } else if(optArg.equals("", "--tames")) {
                 try {
                     _config.tames = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
+            } else if(optArg.equals("", "--wilds")) {
+                try {
+                    _config.wilds = util::parseUInt32(optArg.arg);
                 } catch(...) {
                     throw std::string("invalid argument");
                 }

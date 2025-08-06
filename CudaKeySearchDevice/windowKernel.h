@@ -12,10 +12,12 @@ struct MatchRecord { uint32_t offset, fragment; uint64_t k; };
 #ifndef __CUDACC__
 struct dim3 { unsigned int x, y, z; dim3(unsigned int a=1,unsigned int b=1,unsigned int c=1):x(a),y(b),z(c){} };
 #endif
+#include <cuda_runtime.h>
 
-// Host wrapper launching the GPU kernel. Grid configuration is chosen
-// internally; callers only specify the range and window parameters.
-extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
+// Host wrapper launching the GPU kernel. Grid configuration is supplied by the
+// caller allowing external control during testing.
+extern "C" void launchWindowKernel(dim3 grid, dim3 block,
+                                   uint64_t start_k, uint64_t range_len,
                                    uint32_t ws, const uint32_t* offsets,
                                    uint32_t offsets_count, uint32_t mask,
                                    const uint32_t* target_frags,
