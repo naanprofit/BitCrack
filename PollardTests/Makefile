@@ -1,4 +1,6 @@
 NAME=PollardTests
+BUILD_CUDA?=0
+BUILD_OPENCL?=0
 CPPSRC=main.cpp
 ifeq ($(BUILD_CUDA),0)
 CPPSRC+=../KeyFinder/PollardEngine.cpp
@@ -6,8 +8,6 @@ endif
 CUDASRC=cuda_scalar_one.cu
 BINDIR?=.
 
-BUILD_CUDA?=0
-BUILD_OPENCL?=0
 BUILD_CUDA:=$(if $(BUILD_CUDA),$(BUILD_CUDA),0)
 BUILD_OPENCL:=$(if $(BUILD_OPENCL),$(BUILD_OPENCL),0)
 
