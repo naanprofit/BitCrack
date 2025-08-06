@@ -3,14 +3,10 @@
 
 #include <cstdint>
 
-
-#ifdef BUILD_CUDA
-#include <cuda_runtime.h>
-#else
-// When compiled without CUDA support the ``dim3`` type provided by
-// ``cuda_runtime.h`` is unavailable. Supply a lightweight substitute so the
-
-// launcher prototype below remains valid in host-only builds.
+// ``cuda_runtime.h`` defines ``dim3`` when compiling with NVCC.  In host-only
+// builds the definition is absent so supply a minimal stand‑in to keep the API
+// consistent.
+#ifndef __CUDACC__
 struct dim3 {
     unsigned int x, y, z;
     dim3(unsigned int a = 1u, unsigned int b = 1u, unsigned int c = 1u)

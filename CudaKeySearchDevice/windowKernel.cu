@@ -1,8 +1,7 @@
-#include <stdint.h>
+#include "windowKernel.h"
 #include <cuda_runtime.h>
 #include <cstdio>
 #include "secp256k1.cuh"
-#include "windowKernel.h"
 
 // Simple CUDA error checking macro used throughout this file.
 #define CUDA_CHECK(call) do { \

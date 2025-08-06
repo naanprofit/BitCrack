@@ -18,7 +18,8 @@ CUSRC=../CudaKeySearchDevice/windowKernel.cu \
 
 OBJS=
 ifeq ($(BUILD_CUDA),1)
-OBJS+=main.o PollardEngine.o CudaPollardDevice.o cuda_scalar_one.o $(CUSRC:.cu=.o)
+OBJS+=main.o PollardEngine.o CudaPollardDevice.o cuda_scalar_one.o \
+     $(CUSRC:.cu=.o) ../CudaKeySearchDevice/cuda_libs.o
 endif
 
 CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)

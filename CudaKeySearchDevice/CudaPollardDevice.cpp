@@ -458,6 +458,8 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
             CUDA_CHECK(cudaMemset(d_count, 0, sizeof(uint32_t)));
             launchWindowKernel(grid, block, chunkStart, range, windowBits,
                                d_offsets, offsetsCount, mask, d_targets, d_out, d_count);
+            CUDA_CHECK(cudaGetLastError());
+            CUDA_CHECK(cudaDeviceSynchronize());
 
             uint32_t hCount = 0;
             CUDA_CHECK(cudaMemcpy(&hCount, d_count, sizeof(uint32_t), cudaMemcpyDeviceToHost));
