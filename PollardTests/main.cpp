@@ -140,9 +140,8 @@ static std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned
     if(offset + bits > 160) {
         return out;
     }
-    unsigned int leOffset = 160 - (offset + bits);
-    unsigned int word = leOffset / 32;
-    unsigned int bit  = leOffset % 32;
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
     unsigned int words = (bits + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -1017,14 +1016,13 @@ bool runWindowCRTIntegration() {
     PollardEngine engine([&](KeySearchResult r){ if(r.privateKey.toUint64()==key) found=true; },
                          8u, {0u,8u}, {target}, uint256(0), uint256(1000));
 
-    std::vector<unsigned int> offsetsBE = {0u,8u};
-    for(unsigned int offBE : offsetsBE) {
-        unsigned int modBits = offBE + 8u;
+    std::vector<unsigned int> offsets = {0u,8u};
+    for(unsigned int off : offsets) {
+        unsigned int modBits = off + 8u;
         uint64_t mod = 1ULL << modBits;
         uint64_t rem = key & (mod - 1ULL);
-        unsigned int offLE = 160u - (offBE + 8u);
         PollardEngine::Constraint c{uint256(mod), uint256(rem)};
-        engine.processWindow(0, offLE, c);
+        engine.processWindow(0, off, c);
     }
 
     uint256 k0, M;

@@ -56,9 +56,8 @@ uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint
     return out;
 }
 
-uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
-    return hashWindowLE(h, offsetLE, bits);
+uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
+    return hashWindowLE(h, offset, bits);
 }
 
 namespace {
@@ -150,16 +149,15 @@ void runWalk(PollardEngine &engine,
 
     std::vector<TargetWindowCL> windowList;
     for(size_t t = 0; t < targets.size(); ++t) {
-        for(unsigned int offBE : offsets) {
-            if(offBE + windowBits > 160) {
+        for(unsigned int off : offsets) {
+            if(off + windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + windowBits);
             TargetWindowCL tw;
             tw.targetIdx = static_cast<cl_uint>(t);
-            tw.offset    = offLE;
+            tw.offset    = off;
             tw.bits      = windowBits;
-            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), offBE, windowBits);
+            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), off, windowBits);
             hv.exportWords(tw.target, 5);
             windowList.push_back(tw);
         }
@@ -253,8 +251,8 @@ void runWalk(PollardEngine &engine,
     clFinish(q);
 
     for(cl_uint i = 0; i < h_count && i < maxOut; ++i) {
-        unsigned int offsetLE = h_out[i].offset;
-        unsigned int modBits  = 160u - offsetLE;
+        unsigned int offset = h_out[i].offset;
+        unsigned int modBits  = offset + h_out[i].bits;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -279,7 +277,7 @@ void runWalk(PollardEngine &engine,
             mod.v[modBits / 32] = (1u << (modBits % 32));
         }
         PollardEngine::Constraint c{mod, rem};
-        engine.processWindow(h_out[i].targetIdx, offsetLE, c);
+        engine.processWindow(h_out[i].targetIdx, offset, c);
     }
 
     clReleaseMemObject(d_out);

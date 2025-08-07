@@ -53,11 +53,9 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
     return out;
 }
 
-// Helper that extracts a window using a big-endian bit offset.  The device
-// kernels expect little-endian offsets so convert prior to slicing.
-static uint256 hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
-    return hashWindowLE(h, offsetLE, bits);
+// Helper that mirrors ``hashWindowLE`` but retains the historical name.
+static uint256 hashWindowBE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
+    return hashWindowLE(h, offset, bits);
 }
 
 // Each thread runs an independent walk using a unique seed and starting
@@ -150,16 +148,15 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     // the target fragments.
     std::vector<GpuTargetWindow> h_windows;
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int offBE : _offsets) {
-            if(offBE + _windowBits > 160) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
-            tw.offset    = offLE;
+            tw.offset    = off;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), off, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -197,8 +194,8 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
-        unsigned int offsetLE = h_out[i].offset;
-        unsigned int modBits  = 160u - offsetLE;
+        unsigned int offset = h_out[i].offset;
+        unsigned int modBits  = offset + h_out[i].bits;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -223,7 +220,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             mod.v[modBits / 32] = (1u << (modBits % 32));
         }
         PollardEngine::Constraint c{mod, rem};
-        _engine.processWindow(h_out[i].targetIdx, offsetLE, c);
+        _engine.processWindow(h_out[i].targetIdx, offset, c);
     }
 
     cudaFree(d_out);
@@ -322,16 +319,15 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     // Prepare target windows using little-endian offsets for the device
     std::vector<GpuTargetWindow> h_windows;
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int offBE : _offsets) {
-            if(offBE + _windowBits > 160) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
-            tw.offset    = offLE;
+            tw.offset    = off;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), off, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -369,8 +365,8 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
-        unsigned int offsetLE = h_out[i].offset;
-        unsigned int modBits  = 160u - offsetLE;
+        unsigned int offset = h_out[i].offset;
+        unsigned int modBits  = offset + h_out[i].bits;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -395,7 +391,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             mod.v[modBits / 32] = (1u << (modBits % 32));
         }
         PollardEngine::Constraint c{mod, rem};
-        _engine.processWindow(h_out[i].targetIdx, offsetLE, c);
+        _engine.processWindow(h_out[i].targetIdx, offset, c);
     }
 
     cudaFree(d_out);
@@ -414,17 +410,15 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
                                      uint32_t windowBits,
                                      const uint32_t *targetFragments,
                                      std::vector<PollardEngine::Constraint> &outConstraints) {
-    // Convert supplied offsets (big-endian) to little-endian form for the
-    // window kernel and filter out any invalid entries that would exceed the
-    // 160-bit hash length.
-    std::vector<uint32_t> offsetsLE;
-    for(unsigned int offBE : _offsets) {
-        if(offBE + windowBits > 160) {
+    // Filter offsets that would extend beyond the 160-bit hash length.
+    std::vector<uint32_t> offsets;
+    for(unsigned int off : _offsets) {
+        if(off + windowBits > 160) {
             continue;
         }
-        offsetsLE.push_back(160 - (offBE + windowBits));
+        offsets.push_back(off);
     }
-    uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
+    uint32_t offsetsCount = static_cast<uint32_t>(offsets.size());
     if(offsetsCount == 0 || windowBits == 0) {
         return;
     }
@@ -448,7 +442,7 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     err = cudaGetLastError();
     if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
 
-    cudaMemcpy(d_offsets, offsetsLE.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_offsets, offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
     err = cudaGetLastError();
     if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
     cudaMemcpy(d_targets, targetFragments, offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
@@ -491,7 +485,7 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
                 continue;
             }
 
-            uint32_t modBits = 160u - r.offset;
+            uint32_t modBits = r.offset + windowBits;
             secp256k1::uint256 rem(0);
             uint64_t frag = static_cast<uint64_t>(r.fragment & mask);
             uint32_t word = r.offset / 32;
