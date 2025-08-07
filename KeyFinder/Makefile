@@ -3,7 +3,7 @@ CPPSRC=ConfigFile.cpp DeviceManager.cpp PollardEngine.cpp main.cpp
 all:
 ifeq ($(BUILD_CUDA), 1)
 	${NVCC} -x cu -DBUILD_CUDA -o cuKeyFinder.bin ${CPPSRC} \
-	${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} ${LIBS} -L${CUDA_LIB} -L${LIBDIR} \
+	${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} ${LIBS} -L${CUDA_LIB} -L${LIBDIR} -L../CudaKeySearchDevice \
 	-lCudaKeySearchDevice -lkeyfinder -laddressutil -lsecp256k1 -lcryptoutil -lcudautil -llogger -lutil \
 	-lcudart -lcudadevrt -lcmdparse
 	mkdir -p $(BINDIR)
