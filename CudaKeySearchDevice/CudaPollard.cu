@@ -388,7 +388,7 @@ extern "C" __global__ void pollardRandomWalk(CudaPollardMatch *out,
             unsigned int digest[5];
             unsigned int finalHashBE[5];
             unsigned int finalHash[5];
-            hashPublicKeyCompressed(px, py[7] & 1, digest);
+            hashPublicKeyCompressed(px, py[0] & 1, digest);
             doRMD160FinalRound(digest, finalHashBE);
             // Convert to little-endian word order
             for(int j = 0; j < 5; ++j) {
@@ -465,7 +465,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             uint32_t digest[5];
             uint32_t finalHashBE[5];
             uint32_t finalHash[5];
-            hashPublicKeyCompressed(px, py[7] & 1, digest);
+            hashPublicKeyCompressed(px, py[0] & 1, digest);
             doRMD160FinalRound(digest, finalHashBE);
             // Convert to little-endian word order
             for(int j = 0; j < 5; ++j) {
@@ -501,7 +501,7 @@ extern "C" __global__ void pollardWalk(GpuPollardWindow *out,
             uint32_t digest[5];
             uint32_t finalHashBE[5];
             uint32_t finalHash[5];
-            hashPublicKeyCompressed(px, py[7] & 1, digest);
+            hashPublicKeyCompressed(px, py[0] & 1, digest);
             doRMD160FinalRound(digest, finalHashBE);
             // Convert to little-endian word order
             for(int j = 0; j < 5; ++j) {
