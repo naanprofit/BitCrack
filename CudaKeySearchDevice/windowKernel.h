@@ -21,6 +21,7 @@ extern "C" void launchWindowKernel(dim3 grid,
                                    const uint32_t *d_targets,
                                    MatchRecord *d_out,
                                    uint32_t *d_out_count,
+                                   unsigned int max_out,
                                    cudaStream_t stream = 0);
 
 #endif // WINDOW_KERNEL_H
