@@ -630,9 +630,11 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
             cudaEventCreate(&evStart);
             cudaEventCreate(&evStop);
             cudaEventRecord(evStart);
-            launchWindowKernel(chunkStart, thisChunk, _windowBits,
-                               dev_offsets, offsetsCount, mask,
-                               dev_target_frags, dev_out_buf, dev_out_count);
+            launchWindowKernel(dim3(), dim3(),
+                               chunkStart, thisChunk, _windowBits,
+                               dev_offsets, offsetsCount,
+                               dev_target_frags, dev_out_buf,
+                               dev_out_count);
             cudaEventRecord(evStop);
             cudaEventSynchronize(evStop);
             float ms = 0.0f;
