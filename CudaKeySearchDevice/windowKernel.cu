@@ -169,7 +169,10 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
     for(uint64_t i = idx; i < range_len; i += stride) {
         uint64_t k = start_k + i;
         uint32_t X[8], Y[8];
-        scalarMultiplyBase(reinterpret_cast<const uint32_t*>(&k), X, Y);
+        uint32_t kWords[8] = {0};
+        kWords[0] = (uint32_t)k;
+        kWords[1] = (uint32_t)(k >> 32);
+        scalarMultiplyBase(kWords, X, Y);
         for(uint32_t j = 0; j < offsets_count; ++j) {
             uint32_t off  = offsets[j];
             uint32_t word = off >> 5;
