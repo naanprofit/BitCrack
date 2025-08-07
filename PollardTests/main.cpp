@@ -86,24 +86,21 @@ static bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
         }
     }
 
-    std::array<unsigned char,20> bytes;
+    std::array<uint8_t,20> bytes;
     for(int i = 0; i < 20; ++i) {
         unsigned int b = 0;
         std::stringstream ss;
         ss << std::hex << s.substr(i * 2, 2);
         ss >> b;
-        bytes[i] = static_cast<unsigned char>(b);
+        bytes[i] = static_cast<uint8_t>(b);
     }
 
-    // Convert the big-endian hex string to the little-endian layout used by
-    // hashWindowBE by reversing the byte order prior to packing 32-bit words.
     std::reverse(bytes.begin(), bytes.end());
-
     for(int i = 0; i < 5; ++i) {
-        hash[i] = static_cast<unsigned int>(bytes[i * 4]) |
-                  (static_cast<unsigned int>(bytes[i * 4 + 1]) << 8) |
-                  (static_cast<unsigned int>(bytes[i * 4 + 2]) << 16) |
-                  (static_cast<unsigned int>(bytes[i * 4 + 3]) << 24);
+        hash[i] = uint32_t(bytes[4*i]) |
+                  uint32_t(bytes[4*i+1]) << 8 |
+                  uint32_t(bytes[4*i+2]) << 16 |
+                  uint32_t(bytes[4*i+3]) << 24;
     }
 
     return true;
@@ -140,9 +137,8 @@ static std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned
     if(offset + bits > 160) {
         return out;
     }
-    unsigned int leOffset = 160 - (offset + bits);
-    unsigned int word = leOffset / 32;
-    unsigned int bit  = leOffset % 32;
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
     unsigned int words = (bits + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -1014,15 +1010,17 @@ bool runWindowCRTIntegration() {
     for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
 
     bool found = false;
+    std::vector<unsigned int> offsetsLE = {152u, 144u};
     PollardEngine engine([&](KeySearchResult r){ if(r.privateKey.toUint64()==key) found=true; },
-                         8u, {0u,8u}, {target}, uint256(0), uint256(1000));
+                         8u, offsetsLE, {target}, uint256(0), uint256(1000));
 
     std::vector<unsigned int> offsetsBE = {0u,8u};
-    for(unsigned int offBE : offsetsBE) {
+    for(size_t i = 0; i < offsetsBE.size(); ++i) {
+        unsigned int offBE = offsetsBE[i];
         unsigned int modBits = offBE + 8u;
         uint64_t mod = 1ULL << modBits;
         uint64_t rem = key & (mod - 1ULL);
-        unsigned int offLE = 160u - (offBE + 8u);
+        unsigned int offLE = offsetsLE[i];
         PollardEngine::Constraint c{uint256(mod), uint256(rem)};
         engine.processWindow(0, offLE, c);
     }
