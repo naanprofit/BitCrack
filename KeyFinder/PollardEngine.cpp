@@ -265,10 +265,9 @@ bool combineCRT(const PollardEngine::Constraint &a,
 
 // Extract ``bits`` bits starting at ``offset`` (MSB=0) from a 160-bit
 // big-endian hash represented as five little-endian 32-bit words.  This
-// mirrors the Python expression ``(target >> (160 - (off + ws)))`` where ``off``
-// is the bit offset from the most significant bit and ``ws`` is the window
-// size.  The result is returned as five little-endian words with any unused
-// high words cleared.
+// Extract ``bits`` bits starting at ``offset`` from a 160-bit hash ``h`` where
+// ``h`` is provided in little-endian word order and ``offset`` counts from the
+// least-significant bit.
 std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int offset,
                                         unsigned int bits) {
     std::array<unsigned int,5> out{};
@@ -276,12 +275,9 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
         return out;
     }
 
-    // Convert the big-endian offset to the equivalent little-endian bit
-    // offset used by the existing window-extraction logic.
-    unsigned int leOffset = 160 - (offset + bits);
-    unsigned int word = leOffset / 32;
-    unsigned int bit  = leOffset % 32;
-    unsigned int words = (bits + 31) / 32;        // number of output words
+    unsigned int word  = offset / 32;
+    unsigned int bit   = offset % 32;
+    unsigned int words = (bits + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
         if(bit && word + i + 1 < 5) {
@@ -289,6 +285,7 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
         }
         out[i] = static_cast<unsigned int>(val & 0xffffffffULL);
     }
+
     unsigned int maskBits = bits % 32;
     if(maskBits) {
         unsigned int mask = (1u << maskBits) - 1u;
@@ -304,23 +301,19 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
 
 void PollardEngine::handleMatch(const PollardMatch &m) {
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int offBE : _offsets) {
-            if(offBE + _windowBits > 160) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) {
                 continue;
             }
 
-            // Convert big-endian offset to the little-endian offset used for
-            // scalar constraints and bookkeeping.
-            unsigned int offLE = 160 - (offBE + _windowBits);
-
-            if(_targets[t].seenOffsets.count(offLE)) {
+            if(_targets[t].seenOffsets.count(off)) {
                 continue;
             }
 
-            auto want = hashWindowBE(_targets[t].hash.data(), offBE, _windowBits);
-            auto got  = hashWindowBE(m.hash, offBE, _windowBits);
+            auto want = hashWindowBE(_targets[t].hash.data(), off, _windowBits);
+            auto got  = hashWindowBE(m.hash, off, _windowBits);
             if(got == want) {
-                unsigned int modBits = offBE + _windowBits;
+                unsigned int modBits = off + _windowBits;
                 if(modBits > 256) {
                     continue;
                 }
@@ -333,7 +326,7 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                 if(modBits < 256) {
                     mod.v[modBits / 32] = (1u << (modBits % 32));
                 }
-                processWindow(t, offLE, {mod, rem});
+                processWindow(t, off, {mod, rem});
             }
         }
     }
@@ -590,16 +583,14 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         return;
     }
 
-    std::vector<uint32_t> offsetsLE;
-    std::vector<uint32_t> offsetsBE;
-    for(unsigned int offBE : _offsets) {
-        if(offBE + _windowBits > 160) {
+    std::vector<uint32_t> offsets;
+    for(unsigned int off : _offsets) {
+        if(off + _windowBits > 160) {
             continue;
         }
-        offsetsBE.push_back(offBE);
-        offsetsLE.push_back(160 - (offBE + _windowBits));
+        offsets.push_back(off);
     }
-    uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
+    uint32_t offsetsCount = static_cast<uint32_t>(offsets.size());
     if(offsetsCount == 0) {
         return;
     }
@@ -615,12 +606,12 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     cudaMalloc(&dev_out_buf, range_len * sizeof(MatchRecord));
     cudaMalloc(&dev_out_count, sizeof(uint32_t));
 
-    cudaMemcpy(dev_offsets, offsetsLE.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_offsets, offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
         for(uint32_t i = 0; i < offsetsCount; ++i) {
-            auto win = hashWindow(_targets[t].hash.data(), offsetsBE[i], _windowBits);
+            auto win = hashWindow(_targets[t].hash.data(), offsets[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
         cudaMemcpy(dev_target_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
@@ -640,12 +631,12 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         std::vector<PollardEngine::Constraint> constraints;
         for(uint32_t i = 0; i < hitCount; ++i) {
             auto &r = hostBuf[i];
-            unsigned int offsetLE = r.offset;
-            unsigned int modBits  = 160u - offsetLE;
+            unsigned int offset = r.offset;
+            unsigned int modBits  = offset + _windowBits;
             uint64_t mod = 1ULL << modBits;
             uint64_t rem = 0ULL;
-            if(offsetLE < 64u) {
-                rem = (static_cast<uint64_t>(r.fragment) << offsetLE) & (mod - 1ULL);
+            if(offset < 64u) {
+                rem = (static_cast<uint64_t>(r.fragment) << offset) & (mod - 1ULL);
             }
             constraints.push_back({secp256k1::uint256(mod), secp256k1::uint256(rem)});
         }

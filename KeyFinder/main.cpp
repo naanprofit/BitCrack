@@ -802,48 +802,22 @@ bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
         }
     }
 
-    std::array<unsigned char,20> bytes;
+    std::array<uint8_t,20> bytes;
     for(int i = 0; i < 20; ++i) {
         unsigned int b = 0;
         std::stringstream ss;
         ss << std::hex << s.substr(i * 2, 2);
         ss >> b;
-        bytes[i] = static_cast<unsigned char>(b);
+        bytes[i] = static_cast<uint8_t>(b);
     }
 
-    // The internal representation is little-endian (hash[0] contains the
-    // least significant 32 bits).  Reverse the byte array so that a
-    // big-endian hex string is converted to this little-endian layout.
     std::reverse(bytes.begin(), bytes.end());
 
     for(int i = 0; i < 5; ++i) {
-        hash[i] = static_cast<unsigned int>(bytes[i * 4]) |
-                  (static_cast<unsigned int>(bytes[i * 4 + 1]) << 8) |
-                  (static_cast<unsigned int>(bytes[i * 4 + 2]) << 16) |
-                  (static_cast<unsigned int>(bytes[i * 4 + 3]) << 24);
-    }
-
-    // Reconstruct the big-endian hex string from the internal representation
-    // to ensure the input was provided as a big-endian digest.
-    std::array<unsigned char,20> verify;
-    for(int i = 0; i < 5; ++i) {
-        verify[i * 4]     = static_cast<unsigned char>(hash[i] & 0xFF);
-        verify[i * 4 + 1] = static_cast<unsigned char>((hash[i] >> 8) & 0xFF);
-        verify[i * 4 + 2] = static_cast<unsigned char>((hash[i] >> 16) & 0xFF);
-        verify[i * 4 + 3] = static_cast<unsigned char>((hash[i] >> 24) & 0xFF);
-    }
-    std::reverse(verify.begin(), verify.end());
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for(unsigned char b : verify) {
-        oss << std::setw(2) << static_cast<unsigned int>(b);
-    }
-    std::string reconstructed = oss.str();
-    std::string lowerInput = s;
-    std::transform(lowerInput.begin(), lowerInput.end(), lowerInput.begin(), ::tolower);
-    if(reconstructed != lowerInput) {
-        Logger::log(LogLevel::Error, "hash160 arguments must be specified in big-endian order");
-        return false;
+        hash[i] = uint32_t(bytes[4 * i]) |
+                  (uint32_t(bytes[4 * i + 1]) << 8) |
+                  (uint32_t(bytes[4 * i + 2]) << 16) |
+                  (uint32_t(bytes[4 * i + 3]) << 24);
     }
 
     return true;
