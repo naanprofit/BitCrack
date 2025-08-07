@@ -3,7 +3,7 @@ CPPSRC:=$(wildcard *.cpp)
 CUSRC:=$(wildcard *.cu)
 MATHSRC:=$(CUDA_MATH)/sha256_constants.cu $(CUDA_MATH)/ripemd160_constants.cu
 
-CPPOBJS:=$(addsuffix .o,$(basename $(CPPSRC)))
+CPPOBJS:=$(addsuffix .cpp.o,$(basename $(CPPSRC)))
 CUOBJS:=$(addsuffix .o,$(basename $(CUSRC)))
 OBJS:=$(CPPOBJS) $(CUOBJS)
 
@@ -16,7 +16,7 @@ cuda:
 ;rm -f ${CUDA_MATH}/sha256_constants.cu.o ${CUDA_MATH}/ripemd160_constants.cu.o cuda_libs.o
 ;for file in ${CPPSRC} ; do\
 ;   base=$(basename $$file .cpp); \
-;   ${NVCC} -x cu -c $$file -o $${base}.o ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE};\
+;   ${NVCC} -x cu -c $$file -o $${base}.cpp.o ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE};\
 ;done
 ;for file in ${CUSRC} ; do\
 ;   base=$(basename $$file .cu); \

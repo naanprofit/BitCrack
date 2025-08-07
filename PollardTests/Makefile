@@ -3,6 +3,9 @@ CPPSRC=main.cpp ../KeyFinder/PollardEngine.cpp
 ifeq ($(BUILD_CUDA),1)
 CPPSRC+= ../CudaKeySearchDevice/CudaPollardDevice.cpp
 endif
+ifeq ($(BUILD_OPENCL),1)
+CPPSRC+= ../CLKeySearchDevice/CLPollardDevice.cpp
+endif
 CUDASRC=cuda_scalar_one.cu
 BINDIR?=.
 
@@ -29,9 +32,9 @@ endif
 
 all: $(OBJS)
 ifeq ($(BUILD_CUDA),1)
-;${NVCC} -x cu -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} -I${CUDA_INCLUDE} ${NVCCFLAGS} ${LIBS} ${LIBS_LOCAL}
+;${NVCC} -x cu -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} -I${CUDA_INCLUDE} $(if $(BUILD_OPENCL),-I${OPENCL_INCLUDE}) ${NVCCFLAGS} ${LIBS} ${LIBS_LOCAL}
 else
-;${CXX} -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} ${CXXFLAGS} ${LIBS} ${LIBS_LOCAL}
+;${CXX} -o pollardtests.bin ${CPPSRC} $(OBJS) ${INCLUDE} $(if $(BUILD_OPENCL),-I${OPENCL_INCLUDE}) ${CXXFLAGS} ${LIBS} ${LIBS_LOCAL}
 endif
 ;mkdir -p $(BINDIR)
 ;cp pollardtests.bin $(BINDIR)/pollardtests
