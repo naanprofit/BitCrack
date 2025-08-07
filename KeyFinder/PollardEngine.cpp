@@ -301,23 +301,15 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
 
 void PollardEngine::handleMatch(const PollardMatch &m) {
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int offBE : _offsets) {
-            if(offBE + _windowBits > 160) {
+        for(unsigned int off : _offsets) {
+            if(_targets[t].seenOffsets.count(off)) {
                 continue;
             }
 
-            // Convert big-endian offset to the little-endian offset used for
-            // scalar constraints and bookkeeping.
-            unsigned int offLE = 160 - (offBE + _windowBits);
-
-            if(_targets[t].seenOffsets.count(offLE)) {
-                continue;
-            }
-
-            auto want = hashWindowBE(_targets[t].hash.data(), offLE, _windowBits);
-            auto got  = hashWindowBE(m.hash, offLE, _windowBits);
+            auto want = hashWindowBE(_targets[t].hash.data(), off, _windowBits);
+            auto got  = hashWindowBE(m.hash, off, _windowBits);
             if(got == want) {
-                unsigned int modBits = offBE + _windowBits;
+                unsigned int modBits = 160u - off;
                 if(modBits > 256) {
                     continue;
                 }
@@ -330,7 +322,7 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                 if(modBits < 256) {
                     mod.v[modBits / 32] = (1u << (modBits % 32));
                 }
-                processWindow(t, offLE, {mod, rem});
+                processWindow(t, off, {mod, rem});
             }
         }
     }
@@ -373,11 +365,13 @@ PollardEngine::PollardEngine(ResultCallback cb,
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
       _sequential(sequential), _debug(debug) {
     // Filter offsets supplied by the user to remove any entry that would extend
-    // beyond the 160-bit RIPEMD160 digest.  Offsets are specified relative to
-    // the most-significant bit of the hash.
+    // beyond the 160-bit RIPEMD160 digest. Offsets are specified relative to
+    // the most-significant bit of the hash, so convert them to the
+    // little-endian bit positions used throughout the engine.
     for(unsigned int off : offsets) {
         if(off + windowBits <= 160) {
-            _offsets.push_back(off);
+            unsigned int offLE = 160u - (off + windowBits);
+            _offsets.push_back(offLE);
         }
     }
     for(const auto &t : targets) {
@@ -587,13 +581,7 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         return;
     }
 
-    std::vector<uint32_t> offsetsLE;
-    for(unsigned int offBE : _offsets) {
-        if(offBE + _windowBits <= 160) {
-            unsigned int offLE = 160u - (_windowBits + offBE);
-            offsetsLE.push_back(offLE);
-        }
-    }
+    std::vector<uint32_t> offsetsLE(_offsets.begin(), _offsets.end());
     uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
     if(offsetsCount == 0) {
         return;

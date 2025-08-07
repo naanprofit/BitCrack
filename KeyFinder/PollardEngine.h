@@ -122,7 +122,7 @@ private:
 
     ResultCallback _callback;
     unsigned int _windowBits;                 // number of bits per window
-    std::vector<unsigned int> _offsets;       // bit offsets of each window
+    std::vector<unsigned int> _offsets;       // little-endian bit offsets of each window
     std::vector<TargetState> _targets;        // state per target hash
 
     std::unique_ptr<PollardDevice> _device;   // producer of walk results
