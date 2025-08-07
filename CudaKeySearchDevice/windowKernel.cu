@@ -171,11 +171,10 @@ __device__ static void scalarMultiplyBase(const uint32_t k[8], uint32_t rx[8], u
 // window fragments from the x-coordinate of ``k * G``. Matching fragments are
 // appended to ``out_buf`` using an atomic counter.
 extern "C" __global__
-void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
+void windowKernel(uint64_t start_k, uint64_t range_len,
                   const uint32_t* offsets, uint32_t offsets_count,
                   uint32_t mask, const uint32_t* target_frags,
                   MatchRecord* out_buf, uint32_t* out_count) {
-    (void)ws; // window size is encoded in mask on device
     uint64_t idx    = blockIdx.x * blockDim.x + threadIdx.x;
     uint64_t stride = blockDim.x * gridDim.x;
     for(uint64_t i = idx; i < range_len; i += stride) {
@@ -208,18 +207,26 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
 }
 
 // Host wrapper used to launch ``windowKernel`` with basic error checking.
-extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
-                                   uint32_t ws, const uint32_t* offsets,
-                                   uint32_t offsets_count, uint32_t mask,
+extern "C" void launchWindowKernel(dim3 grid, dim3 block,
+                                   uint64_t start_k, uint64_t range_len,
+                                   uint32_t window_bits,
+                                   const uint32_t* offsets,
+                                   uint32_t offsets_count,
                                    const uint32_t* target_frags,
                                    MatchRecord* out_buf,
                                    uint32_t* out_count,
-                                   dim3 grid, dim3 block) {
+                                   cudaStream_t stream) {
+    uint32_t mask = (window_bits >= 32)
+                        ? 0xffffffffu
+                        : ((1u << window_bits) - 1u);
     int threads = block.x ? static_cast<int>(block.x) : 256;
-    int blocks  = grid.x ? static_cast<int>(grid.x) : static_cast<int>((range_len + threads - 1) / threads);
-    windowKernel<<<blocks, threads>>>(start_k, range_len, ws, offsets,
-                                      offsets_count, mask, target_frags,
-                                      out_buf, out_count);
+    int blocks =
+        grid.x ? static_cast<int>(grid.x)
+                : static_cast<int>((range_len + threads - 1) / threads);
+    windowKernel<<<blocks, threads, 0, stream>>>(start_k, range_len, offsets,
+                                                offsets_count, mask,
+                                                target_frags, out_buf,
+                                                out_count);
     cudaError_t err = cudaGetLastError();
     if(err != cudaSuccess) {
         fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));
