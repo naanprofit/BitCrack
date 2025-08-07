@@ -12,12 +12,12 @@ cuda:
 ;rm -f ${CUDA_MATH}/sha256_constants.cu.o ${CUDA_MATH}/ripemd160_constants.cu.o cuda_libs.o
 ;for file in ${CPPSRC} ; do\
 ;   base=$${file%.*}; \
-;   ${NVCC} -x cu -c $$file -o "$${base}.o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE};\
+;   ${NVCC} -x cu -c $$file -o "$${base}.cpp.o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE};\
 ;done
 
 ;for file in ${CUSRC} ; do\
 ;   base=$${file%.*}; \
-;   ${NVCC} -c $$file -o "$${base}.o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
+;   ${NVCC} -c $$file -o "$${base}.cu.o" ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
 ;for file in ${MATHSRC} ; do\
@@ -25,9 +25,9 @@ cuda:
 ;   ${NVCC} -c $$file -o ${CUDA_MATH}/$${file_name%.cu}.cu.o ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH};\
 ;done
 
-;${NVCC} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 -dlink -o cuda_libs.o *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
+;${NVCC} ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 -dlink -o cuda_libs.o *.cpp.o *.cu.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o -lcudadevrt -lcudart
 
-;ar rvs ${LIBDIR}/lib$(NAME).a *.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o
+;ar rvs ${LIBDIR}/lib$(NAME).a *.cpp.o *.cu.o ../cudaMath/sha256_constants.cu.o ../cudaMath/ripemd160_constants.cu.o
 
 clean:
 ;rm -f *.o

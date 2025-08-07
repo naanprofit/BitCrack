@@ -145,15 +145,16 @@ void runWalk(PollardEngine &engine,
 
     std::vector<TargetWindowCL> windowList;
     for(size_t t = 0; t < targets.size(); ++t) {
-        for(unsigned int off : offsets) {
-            if(off + windowBits > 160) {
+        for(unsigned int offBE : offsets) {
+            if(offBE + windowBits > 160) {
                 continue;
             }
+            unsigned int offLE = 160 - (offBE + windowBits);
             TargetWindowCL tw;
             tw.targetIdx = static_cast<cl_uint>(t);
-            tw.offset = off;
-            tw.bits = windowBits;
-            uint256 hv = CLPollardDevice::hashWindowLE(targets[t].data(), off, windowBits);
+            tw.offset    = offLE;
+            tw.bits      = windowBits;
+            uint256 hv   = CLPollardDevice::hashWindowLE(targets[t].data(), offLE, windowBits);
             hv.exportWords(tw.target, 5);
             windowList.push_back(tw);
         }
