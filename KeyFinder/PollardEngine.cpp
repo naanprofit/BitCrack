@@ -276,11 +276,8 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
         return out;
     }
 
-    // Convert the big-endian offset to the equivalent little-endian bit
-    // offset used by the existing window-extraction logic.
-    unsigned int leOffset = 160 - (offset + bits);
-    unsigned int word = leOffset / 32;
-    unsigned int bit  = leOffset % 32;
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
     unsigned int words = (bits + 31) / 32;        // number of output words
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -317,8 +314,8 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                 continue;
             }
 
-            auto want = hashWindowBE(_targets[t].hash.data(), offBE, _windowBits);
-            auto got  = hashWindowBE(m.hash, offBE, _windowBits);
+            auto want = hashWindowBE(_targets[t].hash.data(), offLE, _windowBits);
+            auto got  = hashWindowBE(m.hash, offLE, _windowBits);
             if(got == want) {
                 unsigned int modBits = offBE + _windowBits;
                 if(modBits > 256) {
@@ -591,13 +588,11 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     }
 
     std::vector<uint32_t> offsetsLE;
-    std::vector<uint32_t> offsetsBE;
     for(unsigned int offBE : _offsets) {
-        if(offBE + _windowBits > 160) {
-            continue;
+        if(offBE + _windowBits <= 160) {
+            unsigned int offLE = 160u - (_windowBits + offBE);
+            offsetsLE.push_back(offLE);
         }
-        offsetsBE.push_back(offBE);
-        offsetsLE.push_back(160 - (offBE + _windowBits));
     }
     uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
     if(offsetsCount == 0) {
@@ -610,9 +605,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     MatchRecord *dev_out_buf = nullptr;
     uint32_t *dev_out_count = nullptr;
 
+    const uint64_t chunk = 1ULL << 20;
     cudaMalloc(&dev_offsets, offsetsCount * sizeof(uint32_t));
     cudaMalloc(&dev_target_frags, offsetsCount * sizeof(uint32_t));
-    cudaMalloc(&dev_out_buf, range_len * sizeof(MatchRecord));
+    cudaMalloc(&dev_out_buf, chunk * offsetsCount * sizeof(MatchRecord));
     cudaMalloc(&dev_out_count, sizeof(uint32_t));
 
     cudaMemcpy(dev_offsets, offsetsLE.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
@@ -620,37 +616,49 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
         for(uint32_t i = 0; i < offsetsCount; ++i) {
-            auto win = hashWindow(_targets[t].hash.data(), offsetsBE[i], _windowBits);
+            auto win = hashWindow(_targets[t].hash.data(), offsetsLE[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
         cudaMemcpy(dev_target_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
-        cudaMemset(dev_out_count, 0, sizeof(uint32_t));
 
-        launchWindowKernel(start_k, range_len, _windowBits,
-                           dev_offsets, offsetsCount, mask,
-                           dev_target_frags, dev_out_buf, dev_out_count);
+        uint64_t remaining = range_len;
+        uint64_t chunkStart = start_k;
+        while(remaining > 0) {
+            uint64_t thisChunk = std::min<uint64_t>(chunk, remaining);
+            cudaMemset(dev_out_count, 0, sizeof(uint32_t));
+            cudaEvent_t evStart, evStop;
+            cudaEventCreate(&evStart);
+            cudaEventCreate(&evStop);
+            cudaEventRecord(evStart);
+            launchWindowKernel(chunkStart, thisChunk, _windowBits,
+                               dev_offsets, offsetsCount, mask,
+                               dev_target_frags, dev_out_buf, dev_out_count);
+            cudaEventRecord(evStop);
+            cudaEventSynchronize(evStop);
+            float ms = 0.0f;
+            cudaEventElapsedTime(&ms, evStart, evStop);
+            cudaEventDestroy(evStart);
+            cudaEventDestroy(evStop);
+            double throughput = (ms > 0.0f) ? (double)thisChunk / (ms / 1000.0) : 0.0;
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "GPU throughput: %0.2f windows/s", throughput);
+            Logger::log(LogLevel::Info, buf);
 
-        uint32_t hitCount = 0;
-        cudaMemcpy(&hitCount, dev_out_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-        std::vector<MatchRecord> hostBuf(hitCount);
-        if(hitCount) {
-            cudaMemcpy(hostBuf.data(), dev_out_buf, hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
-        }
-
-        std::vector<PollardEngine::Constraint> constraints;
-        for(uint32_t i = 0; i < hitCount; ++i) {
-            auto &r = hostBuf[i];
-            unsigned int offsetLE = r.offset;
-            unsigned int modBits  = 160u - offsetLE;
-            uint64_t mod = 1ULL << modBits;
-            uint64_t rem = 0ULL;
-            if(offsetLE < 64u) {
-                rem = (static_cast<uint64_t>(r.fragment) << offsetLE) & (mod - 1ULL);
+            uint32_t hitCount = 0;
+            cudaMemcpy(&hitCount, dev_out_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+            std::vector<MatchRecord> hostBuf(hitCount);
+            if(hitCount) {
+                cudaMemcpy(hostBuf.data(), dev_out_buf, hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
             }
-            constraints.push_back({secp256k1::uint256(mod), secp256k1::uint256(rem)});
-        }
-        for(uint32_t i = 0; i < hitCount; ++i) {
-            processWindow(t, hostBuf[i].offset, constraints[i]);
+            for(uint32_t i = 0; i < hitCount; ++i) {
+                const MatchRecord &r = hostBuf[i];
+                uint64_t mod = 1ULL << (r.offset + _windowBits);
+                uint64_t rem = ((uint64_t)r.fragment) << r.offset;
+                Constraint c{secp256k1::uint256(mod), secp256k1::uint256(rem)};
+                processWindow(t, r.offset, c);
+            }
+            chunkStart += thisChunk;
+            remaining -= thisChunk;
         }
     }
 

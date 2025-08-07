@@ -4,6 +4,8 @@
 #include <cuda_runtime.h>
 
 #include "secp256k1.cuh"
+#include "sha256.cuh"
+#include "ripemd160.cuh"
 #include "windowKernel.h"
 
 __device__ static inline bool isZero256(const uint32_t a[8]) {
@@ -118,6 +120,16 @@ __device__ static void scalarMultiplySmall(const uint32_t bx[8], const uint32_t 
     }
 }
 
+__device__ static void hashPublicKeyCompressed(const uint32_t *x, uint32_t yParity,
+                                               uint32_t *digestOut) {
+    uint32_t hash[8];
+    sha256PublicKeyCompressed(x, yParity, hash);
+    for(int i = 0; i < 8; ++i) {
+        hash[i] = endian(hash[i]);
+    }
+    ripemd160sha256NoFinal(hash, digestOut);
+}
+
 __device__ static void scalarMultiplyBase(const uint32_t k[8], uint32_t rx[8], uint32_t ry[8]) {
     GLVScalarSplit split;
     splitScalar(k, split);
@@ -173,15 +185,17 @@ void windowKernel(uint64_t start_k, uint64_t range_len, uint32_t ws,
         kWords[0] = (uint32_t)k;
         kWords[1] = (uint32_t)(k >> 32);
         scalarMultiplyBase(kWords, X, Y);
+        uint32_t digest[5];
+        hashPublicKeyCompressed(X, Y[0] & 1u, digest);
         for(uint32_t j = 0; j < offsets_count; ++j) {
             uint32_t off  = offsets[j];
-            uint32_t word = off >> 5;
-            uint32_t bit  = off & 31u;
-            uint32_t frag = 0;
-            if(word < 8) {
-                frag = X[word] >> bit;
-                if(bit && word + 1 < 8) {
-                    frag |= X[word + 1] << (32 - bit);
+            uint32_t word = off / 32u;
+            uint32_t bit  = off % 32u;
+            uint32_t frag = 0u;
+            if(word < 5u) {
+                frag = digest[word] >> bit;
+                if(bit && word + 1u < 5u) {
+                    frag |= digest[word + 1u] << (32u - bit);
                 }
                 frag &= mask;
                 if(frag == target_frags[j]) {
@@ -199,9 +213,10 @@ extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
                                    uint32_t offsets_count, uint32_t mask,
                                    const uint32_t* target_frags,
                                    MatchRecord* out_buf,
-                                   uint32_t* out_count) {
-    int threads = 256;
-    int blocks  = (range_len + threads - 1) / threads;
+                                   uint32_t* out_count,
+                                   dim3 grid, dim3 block) {
+    int threads = block.x ? static_cast<int>(block.x) : 256;
+    int blocks  = grid.x ? static_cast<int>(grid.x) : static_cast<int>((range_len + threads - 1) / threads);
     windowKernel<<<blocks, threads>>>(start_k, range_len, ws, offsets,
                                       offsets_count, mask, target_frags,
                                       out_buf, out_count);
