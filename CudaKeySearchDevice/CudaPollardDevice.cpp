@@ -467,15 +467,14 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     for(uint64_t chunkStart = start_k; chunkStart < end_k && seen.size() < offsetsCount; chunkStart += chunk) {
         uint64_t range = std::min(chunk, end_k - chunkStart);
 
-        cudaMemset(d_count, 0, sizeof(uint32_t));
-        err = cudaGetLastError();
-        if(err != cudaSuccess) { fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err)); exit(1); }
+        
 #if BUILD_CUDA
         launchWindowKernel(dim3(), dim3(),
                            chunkStart, range, windowBits,
                            d_offsets, offsetsCount,
                            d_targets, d_out,
-                           d_count);
+                           d_count,
+                           static_cast<unsigned int>(hostOut.size()));
 #endif
 
         uint32_t hCount = 0;

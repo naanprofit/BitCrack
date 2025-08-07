@@ -625,7 +625,6 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         uint64_t chunkStart = start_k;
         while(remaining > 0) {
             uint64_t thisChunk = std::min<uint64_t>(chunk, remaining);
-            cudaMemset(dev_out_count, 0, sizeof(uint32_t));
             cudaEvent_t evStart, evStop;
             cudaEventCreate(&evStart);
             cudaEventCreate(&evStop);
@@ -634,7 +633,8 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
                                chunkStart, thisChunk, _windowBits,
                                dev_offsets, offsetsCount,
                                dev_target_frags, dev_out_buf,
-                               dev_out_count);
+                               dev_out_count,
+                               static_cast<unsigned int>(chunk * offsetsCount));
             cudaEventRecord(evStop);
             cudaEventSynchronize(evStop);
             float ms = 0.0f;

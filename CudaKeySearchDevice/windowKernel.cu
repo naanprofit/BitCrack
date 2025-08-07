@@ -7,6 +7,7 @@
 #include "sha256.cuh"
 #include "ripemd160.cuh"
 #include "windowKernel.h"
+#include "../cudaUtil/cudaUtil.h"
 
 __device__ static inline bool isZero256(const uint32_t a[8]) {
     for(int i = 0; i < 8; ++i) {
@@ -174,7 +175,8 @@ extern "C" __global__
 void windowKernel(uint64_t start_k, uint64_t range_len,
                   const uint32_t* offsets, uint32_t offsets_count,
                   uint32_t mask, const uint32_t* target_frags,
-                  MatchRecord* out_buf, uint32_t* out_count) {
+                  MatchRecord* out_buf, uint32_t* out_count,
+                  unsigned int max_out) {
     uint64_t idx    = blockIdx.x * blockDim.x + threadIdx.x;
     uint64_t stride = blockDim.x * gridDim.x;
     for(uint64_t i = idx; i < range_len; i += stride) {
@@ -199,6 +201,7 @@ void windowKernel(uint64_t start_k, uint64_t range_len,
                 frag &= mask;
                 if(frag == target_frags[j]) {
                     uint32_t pos = atomicAdd(out_count, 1u);
+                    if (pos >= max_out) return;
                     out_buf[pos] = { off, frag, k };
                 }
             }
@@ -214,7 +217,8 @@ extern "C" void launchWindowKernel(dim3 grid, dim3 block,
                                    uint32_t offsets_count,
                                    const uint32_t* target_frags,
                                    MatchRecord* out_buf,
-                                   uint32_t* out_count,
+                                   uint32_t* d_out_count,
+                                   unsigned int max_out,
                                    cudaStream_t stream) {
     uint32_t mask = (window_bits >= 32)
                         ? 0xffffffffu
@@ -223,14 +227,12 @@ extern "C" void launchWindowKernel(dim3 grid, dim3 block,
     int blocks =
         grid.x ? static_cast<int>(grid.x)
                 : static_cast<int>((range_len + threads - 1) / threads);
+    CUDA_CHECK(cudaMemsetAsync(d_out_count, 0, sizeof(uint32_t), stream));
     windowKernel<<<blocks, threads, 0, stream>>>(start_k, range_len, offsets,
                                                 offsets_count, mask,
                                                 target_frags, out_buf,
-                                                out_count);
-    cudaError_t err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
+                                                d_out_count, max_out);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 }
 
