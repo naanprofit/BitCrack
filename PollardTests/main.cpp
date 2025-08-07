@@ -709,7 +709,10 @@ bool testGpuScalarOne() {
 
 #if BUILD_CUDA
     int cudaDevs = 0;
-    if(cudaGetDeviceCount(&cudaDevs) == cudaSuccess && cudaDevs > 0) {
+    cudaError_t cudaErr = cudaGetDeviceCount(&cudaDevs);
+    if(cudaErr != cudaSuccess) {
+        std::cout << "cudaGetDeviceCount error: " << cudaGetErrorString(cudaErr) << std::endl;
+    } else if(cudaDevs > 0) {
         ran = true;
         unsigned int x[8], y[8], h[5];
         if(!runCudaScalarOne(x, y, h)) return false;
@@ -870,7 +873,10 @@ bool testWindowCRT() {
     bool pass = true;
 #if BUILD_CUDA
     int devCount = 0;
-    if(cudaGetDeviceCount(&devCount) == cudaSuccess && devCount > 0) {
+    cudaError_t cudaErr2 = cudaGetDeviceCount(&devCount);
+    if(cudaErr2 != cudaSuccess) {
+        std::cout << "cudaGetDeviceCount error: " << cudaGetErrorString(cudaErr2) << std::endl;
+    } else if(devCount > 0) {
         ran = true;
         uint64_t L = 0, U = 1000;
         uint64_t key = 123;
