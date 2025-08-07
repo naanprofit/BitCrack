@@ -56,9 +56,8 @@ uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint
     return out;
 }
 
-uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
-    return hashWindowLE(h, offsetLE, bits);
+uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
+    return hashWindowLE(h, offset, bits);
 }
 
 namespace {
@@ -150,16 +149,15 @@ void runWalk(PollardEngine &engine,
 
     std::vector<TargetWindowCL> windowList;
     for(size_t t = 0; t < targets.size(); ++t) {
-        for(unsigned int offBE : offsets) {
-            if(offBE + windowBits > 160) {
+        for(unsigned int off : offsets) {
+            if(off + windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + windowBits);
             TargetWindowCL tw;
             tw.targetIdx = static_cast<cl_uint>(t);
-            tw.offset    = offLE;
+            tw.offset    = off;
             tw.bits      = windowBits;
-            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), offBE, windowBits);
+            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), off, windowBits);
             hv.exportWords(tw.target, 5);
             windowList.push_back(tw);
         }
@@ -310,8 +308,8 @@ void CLPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 extern "C" bool runCLHashWindow(const unsigned int h[5], unsigned int offset,
                                   unsigned int bits, unsigned int out[5]) {
     // Lightweight wrapper used by unit tests to validate the OpenCL window
-    // extraction logic.  ``offset`` is specified from the most-significant bit
-    // of the hash (big-endian).
+    // extraction logic.  ``offset`` is specified from the least-significant bit
+    // of the hash.
     if(offset + bits > 160u) {
         return false;
     }

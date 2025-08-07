@@ -53,11 +53,9 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
     return out;
 }
 
-// Helper that extracts a window using a big-endian bit offset.  The device
-// kernels expect little-endian offsets so convert prior to slicing.
-static uint256 hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
-    return hashWindowLE(h, offsetLE, bits);
+// Helper that extracts a window using a little-endian bit offset.
+static uint256 hashWindowBE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
+    return hashWindowLE(h, offset, bits);
 }
 
 // Each thread runs an independent walk using a unique seed and starting
@@ -144,22 +142,18 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     cudaMemcpy(d_starts, h_starts.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
     cudaMemcpy(d_stride, h_stride.data(), sizeof(uint32_t) * totalThreads * 8, cudaMemcpyHostToDevice);
 
-    // Prepare target windows. Offsets supplied via the CLI are measured from the
-    // most-significant bit of the hash (big-endian).  Convert them to the
-    // little-endian offsets expected by the device kernels prior to computing
-    // the target fragments.
+    // Prepare target windows using little-endian offsets.
     std::vector<GpuTargetWindow> h_windows;
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int offBE : _offsets) {
-            if(offBE + _windowBits > 160) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
-            tw.offset    = offLE;
+            tw.offset    = off;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), off, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -322,16 +316,15 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     // Prepare target windows using little-endian offsets for the device
     std::vector<GpuTargetWindow> h_windows;
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int offBE : _offsets) {
-            if(offBE + _windowBits > 160) {
+        for(unsigned int off : _offsets) {
+            if(off + _windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
-            tw.offset    = offLE;
+            tw.offset    = off;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), off, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -418,11 +411,11 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     // window kernel and filter out any invalid entries that would exceed the
     // 160-bit hash length.
     std::vector<uint32_t> offsetsLE;
-    for(unsigned int offBE : _offsets) {
-        if(offBE + windowBits > 160) {
+    for(unsigned int off : _offsets) {
+        if(off + windowBits > 160) {
             continue;
         }
-        offsetsLE.push_back(160 - (offBE + windowBits));
+        offsetsLE.push_back(off);
     }
     uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
     if(offsetsCount == 0 || windowBits == 0) {
@@ -523,8 +516,8 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
 extern "C" bool runCudaHashWindow(const unsigned int h[5], unsigned int offset,
                                    unsigned int bits, unsigned int out[5]) {
     // Lightweight wrapper used by unit tests to validate the CUDA window
-    // extraction logic.  ``offset`` is measured from the most-significant bit
-    // of the hash (big-endian).
+    // extraction logic.  ``offset`` is measured from the least-significant bit
+    // of the hash.
     if(offset + bits > 160u) {
         return false;
     }

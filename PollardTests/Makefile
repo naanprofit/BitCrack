@@ -21,7 +21,7 @@ NVCCFLAGS+=$(if $(BUILD_CUDA),-DBUILD_CUDA=1) $(if $(BUILD_OPENCL),-DBUILD_OPENC
 
 LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil -lutil -llogger
 ifeq ($(BUILD_OPENCL),1)
-LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB} -lCLKeySearchDevice
+LIBS_LOCAL+=-L${OPENCL_LIB} -lCLKeySearchDevice -lclutil -lOpenCL
 endif
 ifeq ($(BUILD_CUDA),1)
 LIBS_LOCAL+=-L${CUDA_LIB} -lCudaKeySearchDevice -lcudadevrt -lcudart -lkeyfinder

@@ -32,6 +32,8 @@ void CudaKeySearchDevice::cudaCall(cudaError_t err)
 
 CudaKeySearchDevice::CudaKeySearchDevice(int device, int threads, int pointsPerThread, int blocks)
 {
+    // Explicit definition required for some linkers when building as a static
+    // library with NVCC.
     cuda::CudaDeviceInfo info;
     try {
         info = cuda::getDeviceInfo(device);
