@@ -9,11 +9,13 @@
 #include <string>
 #include <vector>
 
-#define CUDA_CHECK(call)                                                          \
+#define CUDA_CHECK(call)                                                         \
     do {                                                                         \
         cudaError_t err__ = (call);                                              \
         if (err__ != cudaSuccess) {                                              \
-            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__,       \
+            fprintf(stderr,                                                     \
+                    "CUDA error at %s:%d (%s): %s\n",                            \
+                    __FILE__, __LINE__, #call,                                   \
                     cudaGetErrorString(err__));                                  \
             exit(1);                                                             \
         }                                                                        \

@@ -9,13 +9,6 @@
 
 __device__ void hashPublicKeyCompressed(const uint32_t*, uint32_t, uint32_t*);
 
-#define CUDA_CHECK(call) do { \
-    cudaError_t err = (call); \
-    if(err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-    } \
-} while(0)
-
 // Result written by the kernel when a hash window matches a target.
 struct GpuPollardWindow {
     uint32_t targetIdx;

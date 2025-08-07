@@ -4,6 +4,7 @@
 #include "../CudaKeySearchDevice/windowKernel.h"
 #if BUILD_CUDA
 #include <cuda_runtime.h>
+#include "../cudaUtil/cudaUtil.h"
 #endif
 #include <cstdio>
 #include <algorithm>
@@ -594,12 +595,14 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     uint32_t *dev_out_count = nullptr;
 
     const uint64_t chunk = 1ULL << 20;
-    cudaMalloc(&dev_offsets, offsetsCount * sizeof(uint32_t));
-    cudaMalloc(&dev_target_frags, offsetsCount * sizeof(uint32_t));
-    cudaMalloc(&dev_out_buf, chunk * offsetsCount * sizeof(MatchRecord));
-    cudaMalloc(&dev_out_count, sizeof(uint32_t));
+    CUDA_CHECK(cudaMalloc(&dev_offsets, offsetsCount * sizeof(uint32_t)));
+    CUDA_CHECK(cudaMalloc(&dev_target_frags, offsetsCount * sizeof(uint32_t)));
+    CUDA_CHECK(cudaMalloc(&dev_out_buf, chunk * offsetsCount * sizeof(MatchRecord)));
+    CUDA_CHECK(cudaMalloc(&dev_out_count, sizeof(uint32_t)));
 
-    cudaMemcpy(dev_offsets, offsetsLE.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy(dev_offsets, offsetsLE.data(),
+                          offsetsCount * sizeof(uint32_t),
+                          cudaMemcpyHostToDevice));
 
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
@@ -607,38 +610,44 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
             auto win = hashWindow(_targets[t].hash.data(), offsetsLE[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
-        cudaMemcpy(dev_target_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaMemcpy(dev_target_frags, hostFrags.data(),
+                              offsetsCount * sizeof(uint32_t),
+                              cudaMemcpyHostToDevice));
 
         uint64_t remaining = range_len;
         uint64_t chunkStart = start_k;
         while(remaining > 0) {
             uint64_t thisChunk = std::min<uint64_t>(chunk, remaining);
             cudaEvent_t evStart, evStop;
-            cudaEventCreate(&evStart);
-            cudaEventCreate(&evStop);
-            cudaEventRecord(evStart);
+            CUDA_CHECK(cudaEventCreate(&evStart));
+            CUDA_CHECK(cudaEventCreate(&evStop));
+            CUDA_CHECK(cudaEventRecord(evStart));
             launchWindowKernel(dim3(), dim3(),
                                chunkStart, thisChunk, _windowBits,
                                dev_offsets, offsetsCount,
                                dev_target_frags, dev_out_buf,
                                dev_out_count,
                                static_cast<unsigned int>(chunk * offsetsCount));
-            cudaEventRecord(evStop);
-            cudaEventSynchronize(evStop);
+            CUDA_CHECK(cudaEventRecord(evStop));
+            CUDA_CHECK(cudaEventSynchronize(evStop));
             float ms = 0.0f;
-            cudaEventElapsedTime(&ms, evStart, evStop);
-            cudaEventDestroy(evStart);
-            cudaEventDestroy(evStop);
+            CUDA_CHECK(cudaEventElapsedTime(&ms, evStart, evStop));
+            CUDA_CHECK(cudaEventDestroy(evStart));
+            CUDA_CHECK(cudaEventDestroy(evStop));
             double throughput = (ms > 0.0f) ? (double)thisChunk / (ms / 1000.0) : 0.0;
             char buf[128];
             std::snprintf(buf, sizeof(buf), "GPU throughput: %0.2f windows/s", throughput);
             Logger::log(LogLevel::Info, buf);
 
             uint32_t hitCount = 0;
-            cudaMemcpy(&hitCount, dev_out_count, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+            CUDA_CHECK(cudaMemcpy(&hitCount, dev_out_count,
+                                  sizeof(uint32_t),
+                                  cudaMemcpyDeviceToHost));
             std::vector<MatchRecord> hostBuf(hitCount);
             if(hitCount) {
-                cudaMemcpy(hostBuf.data(), dev_out_buf, hitCount * sizeof(MatchRecord), cudaMemcpyDeviceToHost);
+                CUDA_CHECK(cudaMemcpy(hostBuf.data(), dev_out_buf,
+                                      hitCount * sizeof(MatchRecord),
+                                      cudaMemcpyDeviceToHost));
             }
             for(uint32_t i = 0; i < hitCount; ++i) {
                 const MatchRecord &r = hostBuf[i];
@@ -652,10 +661,10 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         }
     }
 
-    cudaFree(dev_offsets);
-    cudaFree(dev_target_frags);
-    cudaFree(dev_out_buf);
-    cudaFree(dev_out_count);
+    CUDA_CHECK(cudaFree(dev_offsets));
+    CUDA_CHECK(cudaFree(dev_target_frags));
+    CUDA_CHECK(cudaFree(dev_out_buf));
+    CUDA_CHECK(cudaFree(dev_out_count));
 #else
     for(; k.cmp(U) <= 0; k = k.add(modulus)) {
         ecpoint pub = multiplyPoint(k, G());
