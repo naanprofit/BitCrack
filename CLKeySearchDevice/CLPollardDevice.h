@@ -23,6 +23,7 @@ public:
 
     static secp256k1::uint256 maskBits(unsigned int bits);
     static secp256k1::uint256 hashWindowLE(const unsigned int h[5], unsigned int offset, unsigned int bits);
+    static secp256k1::uint256 hashWindowBE(const unsigned int h[5], unsigned int offset, unsigned int bits);
 
     void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
                        const secp256k1::uint256 &seed, bool sequential) override;

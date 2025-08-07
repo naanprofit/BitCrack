@@ -56,6 +56,11 @@ uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint
     return out;
 }
 
+uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
+    uint32_t offsetLE = 160 - (offsetBE + bits);
+    return hashWindowLE(h, offsetLE, bits);
+}
+
 namespace {
 struct TargetWindowCL {
     cl_uint targetIdx;
@@ -154,7 +159,7 @@ void runWalk(PollardEngine &engine,
             tw.targetIdx = static_cast<cl_uint>(t);
             tw.offset    = offLE;
             tw.bits      = windowBits;
-            uint256 hv   = CLPollardDevice::hashWindowLE(targets[t].data(), offLE, windowBits);
+            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), offBE, windowBits);
             hv.exportWords(tw.target, 5);
             windowList.push_back(tw);
         }
@@ -248,8 +253,8 @@ void runWalk(PollardEngine &engine,
     clFinish(q);
 
     for(cl_uint i = 0; i < h_count && i < maxOut; ++i) {
-        unsigned int offset = h_out[i].offset;
-        unsigned int modBits = offset + h_out[i].bits;
+        unsigned int offsetLE = h_out[i].offset;
+        unsigned int modBits  = 160u - offsetLE;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -274,7 +279,7 @@ void runWalk(PollardEngine &engine,
             mod.v[modBits / 32] = (1u << (modBits % 32));
         }
         PollardEngine::Constraint c{mod, rem};
-        engine.processWindow(h_out[i].targetIdx, offset, c);
+        engine.processWindow(h_out[i].targetIdx, offsetLE, c);
     }
 
     clReleaseMemObject(d_out);
@@ -302,15 +307,15 @@ void CLPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             true, sequential);
 }
 
-extern "C" bool runCLHashWindowLE(const unsigned int h[5], unsigned int offset,
-                                   unsigned int bits, unsigned int out[5]) {
+extern "C" bool runCLHashWindow(const unsigned int h[5], unsigned int offset,
+                                  unsigned int bits, unsigned int out[5]) {
     // Lightweight wrapper used by unit tests to validate the OpenCL window
-    // extraction logic.  Guard against invalid ranges so tests can detect
-    // misuse.
+    // extraction logic.  ``offset`` is specified from the most-significant bit
+    // of the hash (big-endian).
     if(offset + bits > 160u) {
         return false;
     }
-    uint256 v = CLPollardDevice::hashWindowLE(h, offset, bits);
+    uint256 v = CLPollardDevice::hashWindowBE(h, offset, bits);
     v.exportWords(out, 5);
     return true;
 }
