@@ -1,6 +1,7 @@
 #include <stdint.h>
+#include <stdio.h>
+#include <cstdlib>
 #include <cuda_runtime.h>
-#include <cstdio>
 
 #include "secp256k1.cuh"
 #include "windowKernel.h"

@@ -263,12 +263,10 @@ bool combineCRT(const PollardEngine::Constraint &a,
     return true;
 }
 
-// Extract ``bits`` bits starting at ``offset`` (MSB=0) from a 160-bit
-// big-endian hash represented as five little-endian 32-bit words.  This
-// mirrors the Python expression ``(target >> (160 - (off + ws)))`` where ``off``
-// is the bit offset from the most significant bit and ``ws`` is the window
-// size.  The result is returned as five little-endian words with any unused
-// high words cleared.
+// Extract ``bits`` bits starting at ``offset`` from the 160-bit digest ``h``.
+// ``h`` is stored in little-endian word order and ``offset`` counts from the
+// least-significant bit.  The result is returned as five little-endian words
+// with any unused high words cleared.
 std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int offset,
                                         unsigned int bits) {
     std::array<unsigned int,5> out{};
@@ -276,11 +274,8 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
         return out;
     }
 
-    // Convert the big-endian offset to the equivalent little-endian bit
-    // offset used by the existing window-extraction logic.
-    unsigned int leOffset = 160 - (offset + bits);
-    unsigned int word = leOffset / 32;
-    unsigned int bit  = leOffset % 32;
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
     unsigned int words = (bits + 31) / 32;        // number of output words
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -317,8 +312,8 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                 continue;
             }
 
-            auto want = hashWindowBE(_targets[t].hash.data(), offBE, _windowBits);
-            auto got  = hashWindowBE(m.hash, offBE, _windowBits);
+            auto want = hashWindowBE(_targets[t].hash.data(), offLE, _windowBits);
+            auto got  = hashWindowBE(m.hash, offLE, _windowBits);
             if(got == want) {
                 unsigned int modBits = offLE + _windowBits; // == 160 - offBE
                 if(modBits > 256) {
@@ -372,9 +367,17 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int pollInterval,
                              bool sequential,
                              bool debug)
-    : _callback(cb), _windowBits(windowBits), _offsets(offsets),
+    : _callback(cb), _windowBits(windowBits),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
       _sequential(sequential), _debug(debug) {
+    // Filter offsets supplied by the user to remove any entry that would extend
+    // beyond the 160-bit RIPEMD160 digest.  Offsets are specified relative to
+    // the most-significant bit of the hash.
+    for(unsigned int off : offsets) {
+        if(off + windowBits <= 160) {
+            _offsets.push_back(off);
+        }
+    }
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -582,7 +585,14 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         return;
     }
 
-    uint32_t offsetsCount = static_cast<uint32_t>(_offsets.size());
+    std::vector<uint32_t> offsetsLE;
+    for(unsigned int offBE : _offsets) {
+        if(offBE + _windowBits > 160) {
+            continue;
+        }
+        offsetsLE.push_back(160 - (offBE + _windowBits));
+    }
+    uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
     if(offsetsCount == 0) {
         return;
     }
@@ -598,12 +608,12 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     cudaMalloc(&dev_out_buf, range_len * sizeof(MatchRecord));
     cudaMalloc(&dev_out_count, sizeof(uint32_t));
 
-    cudaMemcpy(dev_offsets, _offsets.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_offsets, offsetsLE.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
         for(uint32_t i = 0; i < offsetsCount; ++i) {
-            auto win = hashWindow(_targets[t].hash.data(), _offsets[i], _windowBits);
+            auto win = hashWindow(_targets[t].hash.data(), offsetsLE[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
         cudaMemcpy(dev_target_frags, hostFrags.data(), offsetsCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
