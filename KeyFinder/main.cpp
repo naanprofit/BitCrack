@@ -1222,10 +1222,24 @@ int main(int argc, char **argv)
         _config.startKey = startPos;
     }
 
-	// Check option for compressed, uncompressed, or both
-	if(optCompressed && optUncompressed) {
-		_config.compression = PointCompressionType::BOTH;
-	} else if(optCompressed) {
+    if(!_config.offsets.empty()) {
+        unsigned int windowBits = _config.windowSize ? _config.windowSize : 8;
+        secp256k1::uint256 keyspace = _config.endKey - _config.startKey;
+        keyspace = keyspace + 1;
+        secp256k1::uint256 numerator = keyspace * (uint64_t)_config.offsets.size();
+        secp256k1::uint256 denominator(1);
+        for(unsigned int i = 0; i < windowBits; ++i) {
+            denominator = denominator + denominator;
+        }
+        if(numerator.cmp(denominator) < 0) {
+            Logger::log(LogLevel::Info, "Search space too small for given window/offsets; expected <1 match");
+        }
+    }
+
+        // Check option for compressed, uncompressed, or both
+        if(optCompressed && optUncompressed) {
+                _config.compression = PointCompressionType::BOTH;
+        } else if(optCompressed) {
 		_config.compression = PointCompressionType::COMPRESSED;
 	} else if(optUncompressed) {
 		_config.compression = PointCompressionType::UNCOMPRESSED;
