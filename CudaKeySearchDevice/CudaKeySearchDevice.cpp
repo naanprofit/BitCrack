@@ -30,6 +30,9 @@ void CudaKeySearchDevice::cudaCall(cudaError_t err)
     }
 }
 
+// Host-side constructor initialises device parameters and validates the launch
+// configuration.  This definition was missing previously which resulted in an
+// undefined reference during linkage of CUDA builds.
 CudaKeySearchDevice::CudaKeySearchDevice(int device, int threads, int pointsPerThread, int blocks)
 {
     cuda::CudaDeviceInfo info;

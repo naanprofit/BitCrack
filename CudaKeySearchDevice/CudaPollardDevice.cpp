@@ -53,11 +53,10 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
     return out;
 }
 
-// Helper that extracts a window using a big-endian bit offset.  The device
-// kernels expect little-endian offsets so convert prior to slicing.
-static uint256 hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
-    return hashWindowLE(h, offsetLE, bits);
+// Helper that extracts a window using a little-endian bit offset.  Retained
+// for compatibility with existing call sites.
+static uint256 hashWindowBE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
+    return hashWindowLE(h, offset, bits);
 }
 
 // Each thread runs an independent walk using a unique seed and starting
@@ -159,7 +158,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             tw.targetIdx = static_cast<uint32_t>(t);
             tw.offset    = offLE;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), offLE, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -331,7 +330,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             tw.targetIdx = static_cast<uint32_t>(t);
             tw.offset    = offLE;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), offLE, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -528,7 +527,8 @@ extern "C" bool runCudaHashWindow(const unsigned int h[5], unsigned int offset,
     if(offset + bits > 160u) {
         return false;
     }
-    uint256 v = hashWindowBE(h, offset, bits);
+    uint32_t offLE = 160u - (offset + bits);
+    uint256 v = hashWindowBE(h, offLE, bits);
     v.exportWords(out, 5);
     return true;
 }
