@@ -137,7 +137,7 @@ dir_clunittest: dir_clutil
 	make --directory CLUnitTests
 
 dir_pollardtests: dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil dir_logger
-	make --directory PollardTests
+	$(MAKE) --directory PollardTests BUILD_CUDA=$(BUILD_CUDA)
 
 pollard-tests: dir_pollardtests
 

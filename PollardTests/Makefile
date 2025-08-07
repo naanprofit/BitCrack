@@ -8,8 +8,6 @@ BINDIR?=.
 
 BUILD_CUDA?=0
 BUILD_OPENCL?=0
-BUILD_CUDA:=$(if $(BUILD_CUDA),$(BUILD_CUDA),0)
-BUILD_OPENCL:=$(if $(BUILD_OPENCL),$(BUILD_OPENCL),0)
 
 .RECIPEPREFIX := ;
 
@@ -18,7 +16,8 @@ ifeq ($(BUILD_CUDA),1)
 OBJS+=cuda_scalar_one.o
 endif
 
-CXXFLAGS+=-DBUILD_CUDA=$(BUILD_CUDA) -DBUILD_OPENCL=$(BUILD_OPENCL)
+CXXFLAGS+=$(if $(BUILD_CUDA),-DBUILD_CUDA=1) $(if $(BUILD_OPENCL),-DBUILD_OPENCL=1)
+NVCCFLAGS+=$(if $(BUILD_CUDA),-DBUILD_CUDA=1) $(if $(BUILD_OPENCL),-DBUILD_OPENCL=1)
 
 LIBS_LOCAL=-laddressutil -lsecp256k1 -lcryptoutil -lutil -llogger
 ifeq ($(BUILD_OPENCL),1)
@@ -41,7 +40,7 @@ pollard-tests: all
 ;$(BINDIR)/pollardtests
 
 cuda_scalar_one.o: cuda_scalar_one.cu
-;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${NVCCFLAGS} -gencode=arch=compute_89,code=sm_89 ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH}
+;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} ${NVCCFLAGS}
 
 clean:
 ;rm -f pollardtests.bin cuda_scalar_one.o
