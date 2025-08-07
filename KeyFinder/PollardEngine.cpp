@@ -320,7 +320,7 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
             auto want = hashWindowBE(_targets[t].hash.data(), offBE, _windowBits);
             auto got  = hashWindowBE(m.hash, offBE, _windowBits);
             if(got == want) {
-                unsigned int modBits = offLE + _windowBits; // == 160 - offBE
+                unsigned int modBits = offBE + _windowBits;
                 if(modBits > 256) {
                     continue;
                 }
@@ -640,8 +640,13 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         std::vector<PollardEngine::Constraint> constraints;
         for(uint32_t i = 0; i < hitCount; ++i) {
             auto &r = hostBuf[i];
-            uint32_t mod = 1u << (r.offset + _windowBits);
-            uint32_t rem = (r.fragment << r.offset) & (mod - 1);
+            unsigned int offsetLE = r.offset;
+            unsigned int modBits  = 160u - offsetLE;
+            uint64_t mod = 1ULL << modBits;
+            uint64_t rem = 0ULL;
+            if(offsetLE < 64u) {
+                rem = (static_cast<uint64_t>(r.fragment) << offsetLE) & (mod - 1ULL);
+            }
             constraints.push_back({secp256k1::uint256(mod), secp256k1::uint256(rem)});
         }
         for(uint32_t i = 0; i < hitCount; ++i) {

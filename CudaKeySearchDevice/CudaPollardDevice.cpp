@@ -53,6 +53,13 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
     return out;
 }
 
+// Helper that extracts a window using a big-endian bit offset.  The device
+// kernels expect little-endian offsets so convert prior to slicing.
+static uint256 hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
+    uint32_t offsetLE = 160 - (offsetBE + bits);
+    return hashWindowLE(h, offsetLE, bits);
+}
+
 // Each thread runs an independent walk using a unique seed and starting
 // scalar.  Optional starting points can be supplied for wild walks.  When
 // ``stride`` is non-zero, a deterministic sequential walk is performed where
@@ -152,7 +159,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             tw.targetIdx = static_cast<uint32_t>(t);
             tw.offset    = offLE;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowLE(_targets[t].data(), offLE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -190,8 +197,8 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
-        unsigned int offset = h_out[i].offset;
-        unsigned int modBits = offset + h_out[i].bits;
+        unsigned int offsetLE = h_out[i].offset;
+        unsigned int modBits  = 160u - offsetLE;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -216,7 +223,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             mod.v[modBits / 32] = (1u << (modBits % 32));
         }
         PollardEngine::Constraint c{mod, rem};
-        _engine.processWindow(h_out[i].targetIdx, offset, c);
+        _engine.processWindow(h_out[i].targetIdx, offsetLE, c);
     }
 
     cudaFree(d_out);
@@ -324,7 +331,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             tw.targetIdx = static_cast<uint32_t>(t);
             tw.offset    = offLE;
             tw.bits      = _windowBits;
-            uint256 hv   = hashWindowLE(_targets[t].data(), offLE, _windowBits);
+            uint256 hv   = hashWindowBE(_targets[t].data(), offBE, _windowBits);
             hv.exportWords(tw.target, 5);
             h_windows.push_back(tw);
         }
@@ -362,8 +369,8 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
 
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
-        unsigned int offset = h_out[i].offset;
-        unsigned int modBits = offset + h_out[i].bits;
+        unsigned int offsetLE = h_out[i].offset;
+        unsigned int modBits  = 160u - offsetLE;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -388,7 +395,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             mod.v[modBits / 32] = (1u << (modBits % 32));
         }
         PollardEngine::Constraint c{mod, rem};
-        _engine.processWindow(h_out[i].targetIdx, offset, c);
+        _engine.processWindow(h_out[i].targetIdx, offsetLE, c);
     }
 
     cudaFree(d_out);
@@ -484,7 +491,7 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
                 continue;
             }
 
-            uint32_t modBits = r.offset + windowBits;
+            uint32_t modBits = 160u - r.offset;
             secp256k1::uint256 rem(0);
             uint64_t frag = static_cast<uint64_t>(r.fragment & mask);
             uint32_t word = r.offset / 32;
@@ -513,15 +520,15 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     cudaFree(d_count);
 }
 
-extern "C" bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
-                                    unsigned int bits, unsigned int out[5]) {
+extern "C" bool runCudaHashWindow(const unsigned int h[5], unsigned int offset,
+                                   unsigned int bits, unsigned int out[5]) {
     // Lightweight wrapper used by unit tests to validate the CUDA window
-    // extraction logic.  Guard against invalid ranges so tests can detect
-    // misuse.
+    // extraction logic.  ``offset`` is measured from the most-significant bit
+    // of the hash (big-endian).
     if(offset + bits > 160u) {
         return false;
     }
-    uint256 v = hashWindowLE(h, offset, bits);
+    uint256 v = hashWindowBE(h, offset, bits);
     v.exportWords(out, 5);
     return true;
 }

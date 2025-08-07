@@ -16,15 +16,15 @@
 #include <cuda_runtime.h>
 #include "../CudaKeySearchDevice/CudaPollardDevice.h"
 bool runCudaScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]);
-bool runCudaHashWindowLE(const unsigned int h[5], unsigned int offset,
-                         unsigned int bits, unsigned int out[5]);
+bool runCudaHashWindow(const unsigned int h[5], unsigned int offset,
+                        unsigned int bits, unsigned int out[5]);
 #endif
 
 #if BUILD_OPENCL
 #include "clutil.h"
 #include "clContext.h"
-bool runCLHashWindowLE(const unsigned int h[5], unsigned int offset,
-                       unsigned int bits, unsigned int out[5]);
+bool runCLHashWindow(const unsigned int h[5], unsigned int offset,
+                      unsigned int bits, unsigned int out[5]);
 #endif
 
 struct RefMatch {
@@ -95,7 +95,7 @@ static bool parseHash160(const std::string &s, std::array<unsigned int,5> &hash)
     }
 
     // Convert the big-endian hex string to the little-endian layout used by
-    // hashWindowLE by reversing the byte order prior to packing 32-bit words.
+    // hashWindowBE by reversing the byte order prior to packing 32-bit words.
     std::reverse(bytes.begin(), bytes.end());
 
     for(int i = 0; i < 5; ++i) {
@@ -133,11 +133,15 @@ static inline unsigned int bswap32(unsigned int x) {
            ((x >> 8) & 0x0000ff00U) | (x >> 24);
 }
 
-static std::array<unsigned int,5> hashWindowLE(const unsigned int h[5], unsigned int offset,
+static std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int offset,
                                                unsigned int bits) {
     std::array<unsigned int,5> out{};
-    unsigned int word = offset / 32;
-    unsigned int bit  = offset % 32;
+    if(offset + bits > 160) {
+        return out;
+    }
+    unsigned int leOffset = 160 - (offset + bits);
+    unsigned int word = leOffset / 32;
+    unsigned int bit  = leOffset % 32;
     unsigned int words = (bits + 31) / 32;
     for(unsigned int i = 0; i < words && word + i < 5; ++i) {
         uint64_t val = ((uint64_t)h[word + i]) >> bit;
@@ -289,7 +293,7 @@ bool testHashWindowLEPython() {
     for(int i = 0; i < 5; ++i) {
         le[i] = bswap32(be[4 - i]);
     }
-    auto got = hashWindowLE(le, 0, 160);
+    auto got = hashWindowBE(le, 0, 160);
 
     const char *cmd =
         "python3 - <<'PY'\n"
@@ -331,7 +335,7 @@ bool testHashWindowLEK1() {
     };
     unsigned int le[5];
     secp256k1::uint256::importBigEndian(be, 5).exportWords(le, 5);
-    auto got = hashWindowLE(le, 0, 160);
+    auto got = hashWindowBE(le, 0, 160);
     std::array<unsigned int,5> expected;
     for(int i = 0; i < 5; ++i) expected[i] = le[i];
     return got == expected;
@@ -361,7 +365,7 @@ bool testHashWindowK1Windows() {
         {84, 19, {0x00019451u}}
     };
     for(const auto &c : cases) {
-        auto got = hashWindowLE(le, c.off, c.bits);
+        auto got = hashWindowBE(le, c.off, c.bits);
         unsigned int words = (c.bits + 31) / 32;
         for(unsigned int i = 0; i < words; ++i) {
             if(got[i] != c.words[i]) return false;
@@ -416,7 +420,7 @@ bool testHashWindowOffsets() {
     pclose(pipe);
     if(expected.size() != 4) return false;
     for(int i = 0; i < 4; ++i) {
-        auto got = hashWindowLE(le, offsets[i], 20);
+        auto got = hashWindowBE(le, offsets[i], 20);
         if(got[0] != expected[i]) return false;
         for(int j = 1; j < 5; ++j) {
             if(got[j] != 0u) return false;
@@ -483,7 +487,7 @@ bool testParseHash160Windows() {
     pclose(pipe);
 
     for(const auto &c : cases) {
-        auto got = hashWindowLE(h.data(), c.off, c.bits);
+        auto got = hashWindowBE(h.data(), c.off, c.bits);
         unsigned int words = (c.bits + 31) / 32;
         for(unsigned int i = 0; i < words; ++i) {
             if(got[i] != c.expected[i]) {
@@ -500,7 +504,7 @@ bool testParseHash160Windows() {
 }
 
 // Extract bit windows across word boundaries and verify edge cases
-// of hashWindowLE using a Python reference implementation.
+// of hashWindowBE using a Python reference implementation.
 bool testHashWindowLEEdgeCases() {
     const unsigned int be[5] = {
         0x751e76e8u,
@@ -582,7 +586,7 @@ bool testHashWindowLEEdgeCases() {
     if(idx != cases.size()) return false;
 
     for(const auto &c : cases) {
-        auto got = hashWindowLE(le, c.off, c.bits);
+        auto got = hashWindowBE(le, c.off, c.bits);
         unsigned int words = (c.bits + 31) / 32;
         for(unsigned int i = 0; i < words; ++i) {
             if(got[i] != c.expected[i]) return false;
@@ -749,10 +753,10 @@ bool testDeviceHashWindowLE() {
     bool ran = false;
     for(unsigned int off = 0; off < 160u; ++off) {
         for(unsigned int bits = 1; bits <= 160u - off; ++bits) {
-            auto ref = hashWindowLE(le, off, bits);
+            auto ref = hashWindowBE(le, off, bits);
 #if BUILD_CUDA
             unsigned int outCuda[5];
-            if(runCudaHashWindowLE(le, off, bits, outCuda)) {
+            if(runCudaHashWindow(le, off, bits, outCuda)) {
                 ran = true;
                 for(int i = 0; i < 5; ++i) {
                     if(outCuda[i] != ref[i]) {
@@ -763,7 +767,7 @@ bool testDeviceHashWindowLE() {
 #endif
 #if BUILD_OPENCL
             unsigned int outCl[5];
-            if(runCLHashWindowLE(le, off, bits, outCl)) {
+            if(runCLHashWindow(le, off, bits, outCl)) {
                 ran = true;
                 for(int i = 0; i < 5; ++i) {
                     if(outCl[i] != ref[i]) {
@@ -776,7 +780,7 @@ bool testDeviceHashWindowLE() {
     }
 
     if(!ran) {
-        std::cout << "device hashWindowLE test skipped" << std::endl;
+        std::cout << "device hashWindow test skipped" << std::endl;
     }
 
     return true;
