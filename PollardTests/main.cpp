@@ -872,6 +872,91 @@ bool testCRTMixedOffsetsPython() {
     return k0 == pyK && M == pyM;
 }
 
+static bool pythonWindowFragments(uint64_t key, unsigned int windowBits,
+                                 const std::vector<unsigned int> &offsets,
+                                 std::vector<unsigned int> &out) {
+    std::ostringstream cmd;
+    cmd << "python3 - <<'PY'\n";
+    cmd << "try:\n";
+    cmd << " import ecdsa\n";
+    cmd << "except Exception:\n";
+    cmd << " print('ERR')\n";
+    cmd << " exit()\n";
+    cmd << "k=" << key << "\n";
+    cmd << "G=ecdsa.ecdsa.generator_secp256k1\n";
+    cmd << "P=k*G\n";
+    cmd << "x=int(P.x())\n";
+    cmd << "mask=(1<<" << windowBits << ")-1\n";
+    cmd << "offs=";
+    cmd << "[";
+    for(size_t i=0;i<offsets.size();++i){ if(i) cmd << ","; cmd << offsets[i]; }
+    cmd << "]\n";
+    cmd << "print(' '.join(hex((x>>o)&mask) for o in offs))\n";
+    cmd << "PY";
+
+    FILE *pipe = popen(cmd.str().c_str(), "r");
+    if(!pipe) return false;
+    char buffer[256];
+    std::string outStr;
+    while(fgets(buffer, sizeof(buffer), pipe)) outStr += buffer;
+    pclose(pipe);
+    if(outStr.find("ERR") != std::string::npos) return false;
+    while(!outStr.empty() && (outStr.back()=='\n' || outStr.back()=='\r')) outStr.pop_back();
+    std::stringstream ss(outStr);
+    std::string tok; out.clear();
+    while(ss >> tok){
+        if(tok.rfind("0x",0)==0) tok = tok.substr(2);
+        unsigned long long v = 0ULL; std::stringstream ts; ts << std::hex << tok; ts >> v;
+        out.push_back(static_cast<unsigned int>(v & 0xffffffffULL));
+    }
+    return out.size() == offsets.size();
+}
+
+bool testCudaScanKeyRange() {
+    using namespace secp256k1;
+    bool ran = false;
+    bool pass = true;
+#if BUILD_CUDA
+    int devCount = 0;
+    cudaError_t err = cudaGetDeviceCount(&devCount);
+    if(err != cudaSuccess) {
+        std::cout << "cudaGetDeviceCount error: " << cudaGetErrorString(err) << std::endl;
+    } else if(devCount > 0) {
+        ran = true;
+        uint64_t key = 123;
+        unsigned int ws = 8;
+        std::vector<unsigned int> offsets = {0u, 8u};
+        ecpoint P = scalarMultiplyBase(key);
+        uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
+        std::vector<uint32_t> frags(offsets.size());
+        for(size_t i = 0; i < offsets.size(); ++i) {
+            frags[i] = (P.x.v[0] >> offsets[i]) & mask;
+        }
+        std::vector<unsigned int> pyFrags;
+        if(pythonWindowFragments(key, ws, offsets, pyFrags)) {
+            for(size_t i = 0; i < frags.size(); ++i) {
+                if(frags[i] != pyFrags[i]) pass = false;
+            }
+        }
+        unsigned int be[5];
+        Hash::hashPublicKeyCompressed(P, be);
+        std::array<unsigned int,5> target;
+        for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
+        PollardEngine engine([](KeySearchResult){}, ws, offsets, {target}, uint256(0), uint256(1000));
+        CudaPollardDevice dev(engine, ws, offsets, {target}, false);
+        std::vector<PollardEngine::Constraint> constraints;
+        dev.scanKeyRange(0, 1001, ws, frags.data(), constraints);
+        if(constraints.size() != offsets.size()) pass = false;
+        if(engine.foundOffsets() != offsets.size()) pass = false;
+    }
+#endif
+    if(!ran) {
+        std::cout << "scanKeyRange gpu test skipped" << std::endl;
+        return true;
+    }
+    return pass;
+}
+
 bool testWindowCRT() {
     using namespace secp256k1;
     bool ran = false;
@@ -971,6 +1056,7 @@ int main(int argc, char **argv){
     if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
+    if(!testCudaScanKeyRange()) { std::cout<<"scan key range failed"<<std::endl; fails++; }
     if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
