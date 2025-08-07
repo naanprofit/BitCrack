@@ -8,6 +8,7 @@
 #include <sstream>
 #include <cctype>
 #include <algorithm>
+#include <byteswap.h>
 #include "AddressUtil.h"
 #include "../secp256k1lib/secp256k1.h"
 #include "../KeyFinder/PollardEngine.h"
@@ -912,7 +913,48 @@ bool testWindowCRT() {
     return pass;
 }
 
-int main(){
+// Command line triggered test that runs the full window -> CRT -> enumeration
+// pipeline using the CPU fallback Pollard engine.  A small private key is
+// chosen and its corresponding hash160 is provided as the target.  The test
+// feeds window fragments computed from the key's public point into the engine
+// and asserts the reconstructed key matches the original.
+bool runWindowCRTIntegration() {
+    using namespace secp256k1;
+    uint64_t key = 123;
+    ecpoint P = multiplyPoint(uint256(key), G());
+
+    unsigned int be[5];
+    Hash::hashPublicKeyCompressed(P, be);
+    std::array<unsigned int,5> target;
+    for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
+
+    bool found = false;
+    PollardEngine engine([&](KeySearchResult r){ if(r.privateKey.toUint64()==key) found=true; },
+                         8u, {0u,8u}, {target}, uint256(0), uint256(1000));
+
+    std::vector<unsigned int> offsetsBE = {0u,8u};
+    for(unsigned int offBE : offsetsBE) {
+        unsigned int modBits = offBE + 8u;
+        uint64_t mod = 1ULL << modBits;
+        uint64_t rem = key & (mod - 1ULL);
+        unsigned int offLE = 160u - (offBE + 8u);
+        PollardEngine::Constraint c{uint256(mod), uint256(rem)};
+        engine.processWindow(0, offLE, c);
+    }
+
+    uint256 k0, M;
+    if(!engine.reconstruct(0, k0, M)) return false;
+    if(k0.toUint64() != key) return false;
+    return found;
+}
+
+int main(int argc, char **argv){
+    if(argc > 1 && std::string(argv[1]) == "--test_window_crt") {
+        bool ok = runWindowCRTIntegration();
+        std::cout << (ok ? "PASS" : "FAIL") << std::endl;
+        return ok ? 0 : 1;
+    }
+
     int fails=0;
     if(!testScalarOne()) { std::cout<<"scalar one failed"<<std::endl; fails++; }
     if(!testScalarOneUncompressed()) { std::cout<<"scalar one uncompressed failed"<<std::endl; fails++; }

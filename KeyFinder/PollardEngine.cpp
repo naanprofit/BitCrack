@@ -730,6 +730,14 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
                 util::format(_reconstructionAttempts));
 }
 
+void PollardEngine::runJob(const Job &job) {
+    if(job.tame) {
+        runTameWalk(job.start, job.steps, job.seed);
+    } else {
+        runWildWalk(job.start, job.steps, job.seed);
+    }
+}
+
 std::array<unsigned int,5> PollardEngine::hashWindow(const unsigned int h[5], unsigned int offset,
                                                      unsigned int bits) {
     return hashWindowBE(h, offset, bits);

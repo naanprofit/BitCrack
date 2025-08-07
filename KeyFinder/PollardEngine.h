@@ -79,6 +79,17 @@ public:
     // Walk routines consume results produced by the configured device.  The
     // overloads with a seed parameter enable deterministic behaviour for
     // testing and for GPU implementations that require an explicit seed.
+    struct Job {
+        bool tame;                             // true for tame walk, false for wild
+        secp256k1::uint256 start;              // starting scalar for the walk
+        uint64_t steps;                        // number of steps to take
+        secp256k1::uint256 seed;               // RNG seed for random walks
+    };
+
+    // Execute a pollard job described by ``job``.  The helper dispatches to
+    // ``runTameWalk`` or ``runWildWalk`` as appropriate.
+    void runJob(const Job &job);
+
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps);
     void runTameWalk(const secp256k1::uint256 &start, uint64_t steps, const secp256k1::uint256 &seed);
     void runWildWalk(const secp256k1::uint256 &start, uint64_t steps);
