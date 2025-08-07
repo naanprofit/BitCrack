@@ -27,7 +27,7 @@ ifeq ($(BUILD_OPENCL),1)
 LIBS_LOCAL+=-lclutil -lutil -lOpenCL -L${OPENCL_LIB} -lCLKeySearchDevice
 endif
 ifeq ($(BUILD_CUDA),1)
-LIBS_LOCAL+=-L${CUDA_LIB} -lCudaKeySearchDevice -lcudadevrt -lcudart -lkeyfinder
+LIBS_LOCAL+=-L${CUDA_LIB} -lCudaKeySearchDevice -lcudart
 endif
 
 all: $(OBJS)

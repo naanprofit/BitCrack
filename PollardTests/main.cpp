@@ -995,6 +995,52 @@ bool testWindowCRT() {
     return pass;
 }
 
+bool testGpuCrt() {
+    using namespace secp256k1;
+    bool ran = false;
+    bool pass = true;
+#if BUILD_CUDA
+    int devCount = 0;
+    cudaError_t err = cudaGetDeviceCount(&devCount);
+    if(err == cudaSuccess && devCount > 0) {
+        ran = true;
+        const uint64_t L = 0;
+        const uint64_t U = 1ULL << 12;
+        uint64_t key = 1234ULL;
+        unsigned int ws = 20;
+        std::vector<unsigned int> offsets = {0u,20u,40u,60u};
+        ecpoint P = scalarMultiplyBase(key);
+        unsigned int be[5];
+        Hash::hashPublicKeyCompressed(P, be);
+        std::array<unsigned int,5> target;
+        for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
+        PollardEngine engine([](KeySearchResult){}, ws, offsets, {target}, uint256(L), uint256(U));
+        CudaPollardDevice dev(engine, ws, offsets, {target}, false);
+        uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
+        std::vector<uint32_t> frags(offsets.size());
+        for(size_t i = 0; i < offsets.size(); ++i) {
+            uint32_t word = offsets[i] / 32u;
+            uint32_t bit  = offsets[i] % 32u;
+            uint32_t val  = target[word] >> bit;
+            if(bit && word + 1u < 5u) {
+                val |= target[word + 1u] << (32u - bit);
+            }
+            frags[i] = val & mask;
+        }
+        std::vector<PollardEngine::Constraint> constraints;
+        dev.scanKeyRange(L, U + 1, ws, frags.data(), constraints);
+        uint256 k0, M;
+        if(!engine.reconstruct(0, k0, M)) pass = false;
+        else if(k0.toUint64() != key) pass = false;
+    }
+#endif
+    if(!ran) {
+        std::cout << "gpu crt test skipped" << std::endl;
+        return true;
+    }
+    return pass;
+}
+
 // Command line triggered test that runs the full window -> CRT -> enumeration
 // pipeline using the CPU fallback Pollard engine.  A small private key is
 // chosen and its corresponding hash160 is provided as the target.  The test
@@ -1055,6 +1101,7 @@ int main(int argc, char **argv){
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
     if(!testCudaScanKeyRange()) { std::cout<<"scan key range failed"<<std::endl; fails++; }
     if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
+    if(!testGpuCrt()) { std::cout<<"gpu crt failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
     } else {

@@ -15,11 +15,16 @@ struct dim3 { unsigned int x, y, z; dim3(unsigned int a=1,unsigned int b=1,unsig
 
 // Host wrapper launching the GPU kernel. Grid configuration is chosen
 // internally; callers only specify the range and window parameters.
-extern "C" void launchWindowKernel(uint64_t start_k, uint64_t range_len,
-                                   uint32_t ws, const uint32_t* offsets,
-                                   uint32_t offsets_count, uint32_t mask,
-                                   const uint32_t* target_frags,
-                                   MatchRecord* out_buf,
-                                   uint32_t* out_count);
+extern "C" void launchWindowKernel(uint64_t start_k,
+                                   uint64_t range_len,
+                                   uint32_t ws,
+                                   const uint32_t *d_offsets,
+                                   uint32_t offsetsCount,
+                                   uint32_t mask,
+                                   const uint32_t *d_target_frags,
+                                   MatchRecord *d_out_buf,
+                                   uint32_t *d_out_count,
+                                   dim3 grid = dim3(0),
+                                   dim3 block = dim3(0));
 
 #endif // WINDOW_KERNEL_H
