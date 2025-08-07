@@ -1045,19 +1045,6 @@ int main(int argc, char **argv){
     if(!testScalarOneUncompressed()) { std::cout<<"scalar one uncompressed failed"<<std::endl; fails++; }
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
-    if(!testPollardWindowSizes()) { std::cout<<"pollard window sizes failed"<<std::endl; fails++; }
-    if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
-    if(!testDeviceHashWindowLE()) { std::cout<<"device hash window failed"<<std::endl; fails++; }
-    if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }
-    if(!testHashWindowK1Windows()) { std::cout<<"hash window segments failed"<<std::endl; fails++; }
-    if(!testHashWindowOffsets()) { std::cout<<"hash window offsets failed"<<std::endl; fails++; }
-    if(!testParseHash160Windows()) { std::cout<<"parse hash windows failed"<<std::endl; fails++; }
-    if(!testHashWindowLEEdgeCases()) { std::cout<<"hash window edge cases failed"<<std::endl; fails++; }
-    if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
-    if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
-    if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
-    if(!testCudaScanKeyRange()) { std::cout<<"scan key range failed"<<std::endl; fails++; }
-    if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
     } else {

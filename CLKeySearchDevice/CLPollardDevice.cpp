@@ -56,9 +56,8 @@ uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint
     return out;
 }
 
-uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
-    return hashWindowLE(h, offsetLE, bits);
+uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offset, uint32_t bits) {
+    return hashWindowLE(h, offset, bits);
 }
 
 namespace {
@@ -159,7 +158,7 @@ void runWalk(PollardEngine &engine,
             tw.targetIdx = static_cast<cl_uint>(t);
             tw.offset    = offLE;
             tw.bits      = windowBits;
-            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), offBE, windowBits);
+            uint256 hv   = CLPollardDevice::hashWindowBE(targets[t].data(), offLE, windowBits);
             hv.exportWords(tw.target, 5);
             windowList.push_back(tw);
         }
@@ -315,7 +314,8 @@ extern "C" bool runCLHashWindow(const unsigned int h[5], unsigned int offset,
     if(offset + bits > 160u) {
         return false;
     }
-    uint256 v = CLPollardDevice::hashWindowBE(h, offset, bits);
+    uint32_t offLE = 160u - (offset + bits);
+    uint256 v = CLPollardDevice::hashWindowBE(h, offLE, bits);
     v.exportWords(out, 5);
     return true;
 }

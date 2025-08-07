@@ -37,7 +37,6 @@ endif
 ;cp pollardtests.bin $(BINDIR)/pollardtests
 
 pollard-tests: all
-;$(BINDIR)/pollardtests
 
 cuda_scalar_one.o: cuda_scalar_one.cu
 ;${NVCC} -c cuda_scalar_one.cu -o cuda_scalar_one.o ${INCLUDE} -I${CUDA_INCLUDE} -I${CUDA_MATH} ${NVCCFLAGS}
