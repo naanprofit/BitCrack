@@ -13,6 +13,7 @@
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"
 #if BUILD_CUDA
+#include <cuda_runtime.h>
 #include "../CudaKeySearchDevice/windowKernel.h"
 #endif
 
