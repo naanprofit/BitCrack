@@ -9,6 +9,7 @@
 #include <map>
 #include <iomanip>
 #include <random>
+#include <vector>
 
 #include "KeyFinder.h"
 #include "AddressUtil.h"
@@ -661,6 +662,8 @@ int runPollard()
 
             std::mt19937_64 rng(std::random_device{}());
             while(!_resultFound) {
+                std::vector<PollardEngine::Job> jobs;
+
                 for(uint32_t i = 0; i < tameWorkers && !_resultFound; ++i) {
                     secp256k1::uint256 st;
                     uint64_t steps;
@@ -676,12 +679,12 @@ int runPollard()
                         uint64_t rangeLen = std::min<uint64_t>(chunk, span - off);
                         steps = std::min<uint64_t>(maxSteps, rangeLen);
                     }
-                    engine.runTameWalk(st, steps);
-                    if(engine.allOffsetsFound()) break;
-                }
-
-                if(_resultFound || engine.allOffsetsFound()) {
-                    break;
+                    PollardEngine::Job job;
+                    job.tame = true;
+                    job.start = st;
+                    job.steps = steps;
+                    job.seed = secp256k1::uint256(rng());
+                    jobs.push_back(job);
                 }
 
                 for(uint32_t j = 0; j < wildWorkers && !_resultFound; ++j) {
@@ -698,8 +701,17 @@ int runPollard()
                         uint64_t avail = std::min<uint64_t>(chunk, st.sub(segmentStart).toUint64() + 1);
                         steps = std::min<uint64_t>(maxSteps, avail);
                     }
-                    engine.runWildWalk(st, steps);
-                    if(engine.allOffsetsFound()) break;
+                    PollardEngine::Job job;
+                    job.tame = false;
+                    job.start = st;
+                    job.steps = steps;
+                    job.seed = secp256k1::uint256(rng());
+                    jobs.push_back(job);
+                }
+
+                for(const auto &job : jobs) {
+                    engine.runJob(job);
+                    if(_resultFound || engine.allOffsetsFound()) break;
                 }
 
                 if(_resultFound || engine.allOffsetsFound() || !_config.full) {
