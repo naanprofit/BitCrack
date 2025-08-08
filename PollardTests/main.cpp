@@ -1047,6 +1047,7 @@ bool testOffsetBasisTranslation() {
     std::array<unsigned int,5> target{};
     PollardEngine engine([](KeySearchResult) {}, 8u, offsetsLSB, {target}, uint256(0), uint256(1000));
     engine.setCliOffsetBasis(PollardEngine::OffsetBasis::LSB);
+    engine.setDeviceOffsetBasis(PollardEngine::OffsetBasis::MSB);
     const auto &devOffs = engine.deviceOffsets();
     if(devOffs.size() != offsetsLSB.size()) return false;
     for(size_t i = 0; i < offsetsLSB.size(); ++i) {
