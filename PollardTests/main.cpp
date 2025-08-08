@@ -652,6 +652,38 @@ bool testPollardWindowSizes() {
     return true;
 }
 
+class SeqCaptureDevice : public PollardDevice {
+    bool _lastSequential = true;
+public:
+    void startTameWalk(const secp256k1::uint256 &start, uint64_t steps,
+                       const secp256k1::uint256 &seed, bool sequential) override {
+        (void)start; (void)steps; (void)seed; _lastSequential = sequential;
+    }
+    void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
+                       const secp256k1::uint256 &seed, bool sequential) override {
+        (void)start; (void)steps; (void)seed; _lastSequential = sequential;
+    }
+    bool popResult(PollardMatch &) override { return false; }
+    bool lastSequential() const { return _lastSequential; }
+};
+
+// Ensure PollardEngine can request random-walk mode.
+bool testPollardRandomWalkMode() {
+    std::array<unsigned int,5> target{};
+    auto *dev = new SeqCaptureDevice();
+    PollardEngine engine([](KeySearchResult){}, 8u, {0u}, {target},
+                         secp256k1::uint256(0), secp256k1::uint256(0xFF),
+                         1u, 1u, false, false);
+    engine.setDevice(std::unique_ptr<PollardDevice>(dev));
+    PollardEngine::Job job;
+    job.tame = true;
+    job.start = secp256k1::uint256(0);
+    job.steps = 1;
+    job.seed = secp256k1::uint256(0);
+    engine.runJob(job);
+    return !dev->lastSequential();
+}
+
 static bool runOpenCLScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]) {
 #if BUILD_OPENCL
     try {
@@ -1105,6 +1137,7 @@ int main(int argc, char **argv){
     if(!testGlvMatchesClassic()) { std::cout<<"glv compare failed"<<std::endl; fails++; }
     if(!testDeterministicSeed()) { std::cout<<"deterministic seed failed"<<std::endl; fails++; }
     if(!testPollardWindowSizes()) { std::cout<<"pollard window sizes failed"<<std::endl; fails++; }
+    if(!testPollardRandomWalkMode()) { std::cout<<"pollard random walk failed"<<std::endl; fails++; }
     if(!testGpuScalarOne()) { std::cout<<"gpu scalar one failed"<<std::endl; fails++; }
     if(!testDeviceHashWindowLE()) { std::cout<<"device hash window failed"<<std::endl; fails++; }
     if(!testHashWindowLEK1()) { std::cout<<"hash window k1 failed"<<std::endl; fails++; }

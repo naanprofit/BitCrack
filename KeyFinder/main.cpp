@@ -85,6 +85,7 @@ typedef struct {
     uint32_t pollInterval = 100;
     bool full = false;
     bool deterministic = false;
+    bool sequential = false;
     bool debug = false;
     bool debugKernel = false;
     bool selftest = false;
@@ -297,7 +298,7 @@ void usage()
     printf("--grid-dim N          Override CUDA grid dimension (default auto)\n");
     printf("--block-dim N         Override CUDA block dimension (default auto)\n");
     printf("--full                 Relaunch walks until key is found\n");
-    printf("--deterministic       Use sequential deterministic walks (still uses GPU kernels)\n");
+    printf("--deterministic       Use sequential deterministic walks instead of random (still uses GPU kernels)\n");
     printf("--debug               Enable verbose Pollard debugging\n");
     printf("--debug-kernel        Enable verbose kernel launch diagnostics\n");
     printf("--selftest            Run a GPU self-test before starting\n");
@@ -677,7 +678,7 @@ int runPollard()
             PollardEngine engine(resultCallback, window, offsets, targetHashes,
                                  segmentStart, _config.endKey,
                                  _config.pollBatch, _config.pollInterval,
-                                 true,
+                                 _config.sequential,
                                  _config.debug,
                                  _config.debugKernel);
             engine.setCliOffsetBasis(_config.cliOffsetBasis);
@@ -724,7 +725,7 @@ int runPollard()
                     job.tame = true;
                     job.start = st;
                     job.steps = steps;
-                    job.seed = secp256k1::uint256(rng());
+                    job.seed = _config.sequential ? secp256k1::uint256(0) : secp256k1::uint256(rng());
                     jobs.push_back(job);
                 }
 
@@ -746,7 +747,7 @@ int runPollard()
                     job.tame = false;
                     job.start = st;
                     job.steps = steps;
-                    job.seed = secp256k1::uint256(rng());
+                    job.seed = _config.sequential ? secp256k1::uint256(0) : secp256k1::uint256(rng());
                     jobs.push_back(job);
                 }
 
@@ -1236,6 +1237,7 @@ int main(int argc, char **argv)
                 _config.full = true;
             } else if(optArg.equals("", "--deterministic")) {
                 _config.deterministic = true;
+                _config.sequential = true;
             } else if(optArg.equals("", "--debug")) {
                 _config.debug = true;
             } else if(optArg.equals("", "--debug-kernel")) {

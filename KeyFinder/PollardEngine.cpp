@@ -1,8 +1,8 @@
 #include "PollardEngine.h"
 #include "secp256k1.h"
 #include "AddressUtil.h"
-#include "../CudaKeySearchDevice/windowKernel.h"
 #if BUILD_CUDA
+#include "../CudaKeySearchDevice/windowKernel.h"
 #include <cuda_runtime.h>
 #include "../cudaUtil/cudaUtil.h"
 #endif
