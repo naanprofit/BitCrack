@@ -59,7 +59,7 @@ uint256 CLPollardDevice::hashWindowLE(const uint32_t h[5], uint32_t offset, uint
 }
 
 uint256 CLPollardDevice::hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
+    uint32_t offsetLE = PollardEngine::convertOffset(offsetBE, bits);
     return hashWindowLE(h, offsetLE, bits);
 }
 
@@ -165,7 +165,7 @@ void runWalk(PollardEngine &engine,
             if(offBE + windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + windowBits);
+            unsigned int offLE = PollardEngine::convertOffset(offBE, windowBits);
             TargetWindowCL tw;
             tw.targetIdx = static_cast<cl_uint>(t);
             tw.offset    = offLE;

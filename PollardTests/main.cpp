@@ -940,7 +940,7 @@ bool testCudaScanKeyRange() {
         std::array<unsigned int,5> target;
         for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
         PollardEngine engine([](KeySearchResult){}, ws, offsets, {target}, uint256(0), uint256(1000));
-        CudaPollardDevice dev(engine, ws, offsets, {target}, false);
+        CudaPollardDevice dev(engine, ws, engine.deviceOffsets(), {target}, false);
         std::vector<PollardEngine::Constraint> constraints;
         dev.scanKeyRange(0, 1001, ws, frags.data(), constraints);
         if(constraints.size() != offsets.size()) pass = false;
@@ -980,7 +980,7 @@ bool testWindowCRT() {
         std::array<unsigned int,5> target;
         for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
         PollardEngine engine([](KeySearchResult){}, ws, offsets, {target}, uint256(L), uint256(U));
-        CudaPollardDevice dev(engine, ws, offsets, {target}, false);
+        CudaPollardDevice dev(engine, ws, engine.deviceOffsets(), {target}, false);
         std::vector<PollardEngine::Constraint> constraints;
         dev.scanKeyRange(L, U + 1, ws, frags, constraints);
         uint256 k0, M;
@@ -1015,7 +1015,7 @@ bool testGpuCrt() {
         std::array<unsigned int,5> target;
         for(int i = 0; i < 5; ++i) target[i] = bswap32(be[4 - i]);
         PollardEngine engine([](KeySearchResult){}, ws, offsets, {target}, uint256(L), uint256(U));
-        CudaPollardDevice dev(engine, ws, offsets, {target}, false);
+        CudaPollardDevice dev(engine, ws, engine.deviceOffsets(), {target}, false);
         uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
         std::vector<uint32_t> frags(offsets.size());
         for(size_t i = 0; i < offsets.size(); ++i) {
@@ -1039,6 +1039,21 @@ bool testGpuCrt() {
         return true;
     }
     return pass;
+}
+
+bool testOffsetBasisTranslation() {
+    using namespace secp256k1;
+    std::vector<unsigned int> offsetsLSB = {0u, 8u};
+    std::array<unsigned int,5> target{};
+    PollardEngine engine([](KeySearchResult) {}, 8u, offsetsLSB, {target}, uint256(0), uint256(1000));
+    engine.setCliOffsetBasis(PollardEngine::OffsetBasis::LSB);
+    const auto &devOffs = engine.deviceOffsets();
+    if(devOffs.size() != offsetsLSB.size()) return false;
+    for(size_t i = 0; i < offsetsLSB.size(); ++i) {
+        unsigned int expected = PollardEngine::convertOffset(offsetsLSB[i], 8u);
+        if(devOffs[i] != expected) return false;
+    }
+    return true;
 }
 
 // Command line triggered test that runs the full window -> CRT -> enumeration
@@ -1099,6 +1114,7 @@ int main(int argc, char **argv){
     if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
+    if(!testOffsetBasisTranslation()) { std::cout<<"offset basis translation failed"<<std::endl; fails++; }
     if(!testCudaScanKeyRange()) { std::cout<<"scan key range failed"<<std::endl; fails++; }
     if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
     if(!testGpuCrt()) { std::cout<<"gpu crt failed"<<std::endl; fails++; }
