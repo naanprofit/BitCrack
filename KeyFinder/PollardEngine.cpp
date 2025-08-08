@@ -31,6 +31,12 @@ static std::string hashToString(const unsigned int h[5]) {
     return ss.str();
 }
 
+unsigned int PollardEngine::convertOffset(unsigned int offset, unsigned int bits) {
+    // RIPEMD160 digests are 160 bits. Flipping the basis mirrors the offset
+    // around the end of the window.
+    return 160u - (offset + bits);
+}
+
 namespace {
 
 // Simple CPU implementation of the device interface used for unit tests and
@@ -38,6 +44,7 @@ namespace {
 class CPUPollardDevice : public PollardDevice {
     unsigned int _windowBits;
     SimpleRingBuffer<PollardMatch> _buffer;
+    std::vector<unsigned int> _offsets;
 
     bool checkPoint(const ecpoint &p) {
         uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
@@ -45,8 +52,8 @@ class CPUPollardDevice : public PollardDevice {
     }
 
 public:
-    explicit CPUPollardDevice(unsigned int windowBits)
-        : _windowBits(windowBits), _buffer(1024) {}
+    CPUPollardDevice(unsigned int windowBits, const std::vector<unsigned int> &offsets)
+        : _windowBits(windowBits), _buffer(1024), _offsets(offsets) {}
 
     void startTameWalk(const uint256 &start, uint64_t steps,
                        const uint256 &seed, bool sequential) override;
@@ -352,6 +359,33 @@ void PollardEngine::pollDevice() {
     }
 }
 
+void PollardEngine::regenerateOffsetLists() {
+    _offsets.clear();
+    for(unsigned int off : _cliOffsets) {
+        if(off + _windowBits > 160u) {
+            continue;
+        }
+        unsigned int offLE = (_cliBasis == OffsetBasis::MSB)
+                                 ? convertOffset(off, _windowBits)
+                                 : off;
+        _offsets.push_back(offLE);
+    }
+
+    _deviceOffsets.clear();
+    for(unsigned int offLE : _offsets) {
+        _deviceOffsets.push_back(convertOffset(offLE, _windowBits));
+    }
+
+    for(auto &t : _targets) {
+        t.seenOffsets.clear();
+    }
+}
+
+void PollardEngine::setCliOffsetBasis(OffsetBasis basis) {
+    _cliBasis = basis;
+    regenerateOffsetLists();
+}
+
 PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int windowBits,
                              const std::vector<unsigned int> &offsets,
@@ -365,23 +399,15 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              bool kernelDebug)
     : _callback(cb), _windowBits(windowBits),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
-      _sequential(sequential), _debug(debug), _kernelDebug(kernelDebug) {
-    // Filter offsets supplied by the user to remove any entry that would extend
-    // beyond the 160-bit RIPEMD160 digest. Offsets are specified relative to
-    // the most-significant bit of the hash, so convert them to the
-    // little-endian bit positions used throughout the engine.
-    for(unsigned int off : offsets) {
-        if(off + windowBits <= 160) {
-            unsigned int offLE = 160u - (off + windowBits);
-            _offsets.push_back(offLE);
-        }
-    }
+      _sequential(sequential), _debug(debug), _kernelDebug(kernelDebug),
+      _cliOffsets(offsets), _cliBasis(OffsetBasis::MSB) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
         _targets.push_back(s);
     }
-    _device = std::unique_ptr<PollardDevice>(new CPUPollardDevice(windowBits));
+    regenerateOffsetLists();
+    _device = std::unique_ptr<PollardDevice>(new CPUPollardDevice(windowBits, _deviceOffsets));
 }
 
 void PollardEngine::setDevice(std::unique_ptr<PollardDevice> device) {

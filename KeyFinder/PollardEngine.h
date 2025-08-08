@@ -107,6 +107,20 @@ public:
     size_t foundOffsets() const;
     size_t totalOffsets() const;
 
+    // Helper to convert a bit offset between MSB and LSB bases for a window of
+    // ``bits`` bits. Offsets are measured from the start of the 160-bit
+    // RIPEMD160 digest.
+    static unsigned int convertOffset(unsigned int offset, unsigned int bits);
+
+    enum class OffsetBasis { MSB, LSB };
+
+    // Update the basis of the CLI-supplied offsets. This will regenerate the
+    // internal LSB offsets and the device-facing MSB list.
+    void setCliOffsetBasis(OffsetBasis basis);
+
+    // Accessor for the device-facing offsets (MSB basis).
+    const std::vector<unsigned int> &deviceOffsets() const { return _deviceOffsets; }
+
     // Public wrapper exposing the internal hashWindow helper.  ``h`` must be
     // supplied in little-endian word order.  The returned array contains the
     // extracted window as five 32-bit words with unused high words set to
@@ -123,7 +137,10 @@ private:
 
     ResultCallback _callback;
     unsigned int _windowBits;                 // number of bits per window
+    std::vector<unsigned int> _cliOffsets;    // offsets as supplied on the CLI
+    OffsetBasis _cliBasis;                    // basis of CLI offsets
     std::vector<unsigned int> _offsets;       // little-endian bit offsets of each window
+    std::vector<unsigned int> _deviceOffsets; // offsets normalised to MSB for devices
     std::vector<TargetState> _targets;        // state per target hash
 
     std::unique_ptr<PollardDevice> _device;   // producer of walk results
@@ -155,6 +172,8 @@ private:
 
     static std::array<unsigned int,5> hashWindow(const unsigned int h[5], unsigned int offset,
                                                  unsigned int bits);
+
+    void regenerateOffsetLists();
 };
 
 #endif
