@@ -17,7 +17,7 @@ __device__ static void doRMD160FinalRound(const unsigned int hIn[5], unsigned in
     }
 }
 
-__device__ void hashPublicKeyCompressed(const unsigned int *x, unsigned int yParity, unsigned int *digestOut)
+__device__ static void hashPublicKeyCompressed(const unsigned int *x, unsigned int yParity, unsigned int *digestOut)
 {
     unsigned int hash[8];
     sha256PublicKeyCompressed(x, yParity, hash);

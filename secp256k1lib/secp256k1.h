@@ -264,19 +264,20 @@ namespace secp256k1 {
 			return product;
 		}
 
-		bool bit(int n)
-		{
-			n = n % 256;
+                bool bit(int n) const
+                {
+                        n = n % 256;
 
-			return (this->v[n / 32] & (0x1 << (n % 32))) != 0;
-		}
+                        return (this->v[n / 32] & (0x1 << (n % 32))) != 0;
+                }
 
-		bool isEven()
-		{
-			return (this->v[0] & 1) == 0;
-		}
+                bool isEven() const
+                {
+                        return (this->v[0] & 1) == 0;
+                }
 
-		std::string toString(int base = 16);
+
+               std::string toString(int base = 16) const;
 
         uint64_t toUint64()
         {

@@ -5,6 +5,8 @@ MATHSRC:=$(CUDA_MATH)/sha256_constants.cu $(CUDA_MATH)/ripemd160_constants.cu
 
 CPPOBJS:=$(addsuffix .o,$(CPPSRC))
 CUOBJS:=$(addsuffix .o,$(basename $(CUSRC)))
+# Ensure device code sees BUILD_CUDA definition
+NVCCFLAGS+=-DBUILD_CUDA=1
 # ``windowKernel.o`` is linked separately by the KeyFinder binary to expose the
 # kernel entry point; exclude it from the static archive to avoid duplicate
 # definitions when linking the final executable.
