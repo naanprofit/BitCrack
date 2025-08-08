@@ -325,15 +325,16 @@ std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int of
 
 void PollardEngine::handleMatch(const PollardMatch &m) {
     for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int off : _offsets) {
-            if(_targets[t].seenOffsets.count(off)) {
+        for(unsigned int offLE : _offsets) {
+            if(_targets[t].seenOffsets.count(offLE)) {
                 continue;
             }
 
-            auto want = hashWindowBE(_targets[t].hash.data(), off, _windowBits);
-            auto got  = hashWindowBE(m.hash, off, _windowBits);
+            unsigned int offBE = convertOffset(offLE, _windowBits);
+            auto want = hashWindowBE(_targets[t].hash.data(), offBE, _windowBits);
+            auto got  = hashWindowBE(m.hash, offBE, _windowBits);
             if(got == want) {
-                unsigned int modBits = 160u - off;
+                unsigned int modBits = 160u - offLE;
                 if(modBits > 256) {
                     continue;
                 }
@@ -346,7 +347,7 @@ void PollardEngine::handleMatch(const PollardMatch &m) {
                 if(modBits < 256) {
                     mod.v[modBits / 32] = (1u << (modBits % 32));
                 }
-                processWindow(t, off, {mod, rem});
+                processWindow(t, offLE, {mod, rem});
             }
         }
     }
@@ -666,7 +667,8 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
         for(uint32_t i = 0; i < offsetsCount; ++i) {
-            auto win = hashWindow(_targets[t].hash.data(), offsetsLE[i], _windowBits);
+            unsigned int offBE = convertOffset(offsetsLE[i], _windowBits);
+            auto win = hashWindow(_targets[t].hash.data(), offBE, _windowBits);
             hostFrags[i] = win[0] & mask;
         }
         CUDA_CHECK(cudaMemcpyAsync(dev_target_frags, hostFrags.data(),
