@@ -59,7 +59,7 @@ static uint256 hashWindowLE(const uint32_t h[5], uint32_t offset, uint32_t bits)
 // Helper that extracts a window using a big-endian bit offset.  The device
 // kernels expect little-endian offsets so convert prior to slicing.
 static uint256 hashWindowBE(const uint32_t h[5], uint32_t offsetBE, uint32_t bits) {
-    uint32_t offsetLE = 160 - (offsetBE + bits);
+    uint32_t offsetLE = PollardEngine::convertOffset(offsetBE, bits);
     return hashWindowLE(h, offsetLE, bits);
 }
 
@@ -171,7 +171,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
             if(offBE + _windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + _windowBits);
+            unsigned int offLE = PollardEngine::convertOffset(offBE, _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
             tw.offset    = offLE;
@@ -366,7 +366,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
             if(offBE + _windowBits > 160) {
                 continue;
             }
-            unsigned int offLE = 160 - (offBE + _windowBits);
+            unsigned int offLE = PollardEngine::convertOffset(offBE, _windowBits);
             GpuTargetWindow tw;
             tw.targetIdx = static_cast<uint32_t>(t);
             tw.offset    = offLE;
@@ -467,7 +467,7 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         if(offBE + windowBits > 160) {
             continue;
         }
-        offsetsLE.push_back(160 - (offBE + windowBits));
+        offsetsLE.push_back(PollardEngine::convertOffset(offBE, windowBits));
     }
     uint32_t offsetsCount = static_cast<uint32_t>(offsetsLE.size());
     if(offsetsCount == 0 || windowBits == 0) {
