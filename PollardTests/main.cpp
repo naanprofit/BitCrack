@@ -158,6 +158,30 @@ static std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned
     return out;
 }
 
+static uint64_t clampUint64(const secp256k1::uint256 &val) {
+    for(int i = 2; i < 8; ++i) {
+        if(val.v[i] != 0) {
+            return UINT64_MAX;
+        }
+    }
+    return ((uint64_t)val.v[1] << 32) | val.v[0];
+}
+
+bool testLargeRangeClamp() {
+    using namespace secp256k1;
+    uint256 start(0);
+    uint256 end;
+    end.v[0] = 5u;
+    end.v[2] = 1u; // value = 2^64 + 5
+    uint64_t span = clampUint64(end.sub(start).add(uint64_t(1)));
+    if(span != UINT64_MAX) {
+        return false;
+    }
+    uint256 endSmall(99u);
+    uint64_t spanSmall = clampUint64(endSmall.sub(start).add(uint64_t(1)));
+    return spanSmall == 100u;
+}
+
 bool testDeterministicSeed() {
     auto matches = referenceWalk(2ULL, 1000, 8);
     const uint64_t expectedK[1] = {10820130499599738880ULL};
@@ -1182,6 +1206,7 @@ int main(int argc, char **argv){
     if(!testCudaScanKeyRange()) { std::cout<<"scan key range failed"<<std::endl; fails++; }
     if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
     if(!testGpuCrt()) { std::cout<<"gpu crt failed"<<std::endl; fails++; }
+    if(!testLargeRangeClamp()) { std::cout<<"large range clamp failed"<<std::endl; fails++; }
     if(fails==0) {
         std::cout<<"PASS"<<std::endl;
     } else {
