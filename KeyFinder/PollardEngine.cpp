@@ -16,6 +16,7 @@
 #include <sstream>
 #include <iomanip>
 #include <numeric>
+#include <string>
 #include "../util/RingBuffer.h"
 #include "../util/util.h"
 #include "../Logger/Logger.h"
@@ -35,6 +36,21 @@ unsigned int PollardEngine::convertOffset(unsigned int offset, unsigned int bits
     // RIPEMD160 digests are 160 bits. Flipping the basis mirrors the offset
     // around the end of the window.
     return 160u - (offset + bits);
+}
+
+// Utility to optionally append CRT milestones for debugging
+static inline void crt_debug_append(const std::string &path,
+                                    size_t targetIdx,
+                                    unsigned int offsetLE,
+                                    const uint256 &val,
+                                    const uint256 &mod) {
+    if(!path.empty()) {
+        util::appendToFile(path, std::string("[CRT] target=") +
+                                       util::format((uint32_t)targetIdx) +
+                                       " offLE=" + util::format((uint32_t)offsetLE) +
+                                       " k0=" + uint256(val).toString(16) +
+                                       " mod=" + uint256(mod).toString(16));
+    }
 }
 
 namespace {
@@ -373,7 +389,10 @@ void PollardEngine::regenerateOffsetLists() {
 
     _deviceOffsets.clear();
     for(unsigned int offLE : _offsets) {
-        _deviceOffsets.push_back(convertOffset(offLE, _windowBits));
+        unsigned int devOff = (_deviceBasis == OffsetBasis::MSB)
+                                  ? convertOffset(offLE, _windowBits)
+                                  : offLE;
+        _deviceOffsets.push_back(devOff);
     }
 
     for(auto &t : _targets) {
@@ -383,6 +402,11 @@ void PollardEngine::regenerateOffsetLists() {
 
 void PollardEngine::setCliOffsetBasis(OffsetBasis basis) {
     _cliBasis = basis;
+    regenerateOffsetLists();
+}
+
+void PollardEngine::setDeviceOffsetBasis(OffsetBasis basis) {
+    _deviceBasis = basis;
     regenerateOffsetLists();
 }
 
@@ -400,7 +424,8 @@ PollardEngine::PollardEngine(ResultCallback cb,
     : _callback(cb), _windowBits(windowBits),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
       _sequential(sequential), _debug(debug), _kernelDebug(kernelDebug),
-      _cliOffsets(offsets), _cliBasis(OffsetBasis::MSB) {
+      _cliOffsets(offsets), _cliBasis(OffsetBasis::MSB),
+      _deviceBasis(OffsetBasis::LSB) {
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
@@ -450,6 +475,9 @@ bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
             return false;
         }
         acc = combined;
+        if(!_crtDebugFile.empty()) {
+            crt_debug_append(_crtDebugFile, target, 0, acc.value, acc.modulus);
+        }
     }
 
     k0 = acc.value;

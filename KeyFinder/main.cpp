@@ -88,6 +88,9 @@ typedef struct {
     bool debug = false;
     bool debugKernel = false;
     bool selftest = false;
+    PollardEngine::OffsetBasis cliOffsetBasis = PollardEngine::OffsetBasis::MSB;
+    PollardEngine::OffsetBasis deviceOffsetBasis = PollardEngine::OffsetBasis::LSB;
+    std::string crtDebugFile = "";
 }RunConfig;
 
 static RunConfig _config;
@@ -282,6 +285,9 @@ void usage()
     printf("--pollard              Enable CPU-only Pollard Rho/CRT mode\n");
     printf("--offsets LIST         Comma-separated bit offsets for CRT windows (required)\n");
     printf("--window-size N        Bits per window (default 8)\n");
+    printf("--offset-msb | --offset-lsb       (default: --offset-msb)\n");
+    printf("--device-offset-msb | --device-offset-lsb  (default: --device-offset-lsb)\n");
+    printf("--crt-debug-file FILE  Append CRT milestones to FILE\n");
     printf("--workers N            Total workers per round (default 1)\n");
     printf("--tames N              Number of tame workers (default workers/2)\n");
     printf("--wilds N              Number of wild workers (default workers - tames)\n");
@@ -674,6 +680,12 @@ int runPollard()
                                  true,
                                  _config.debug,
                                  _config.debugKernel);
+            engine.setCliOffsetBasis(_config.cliOffsetBasis);
+            engine.setDeviceOffsetBasis(_config.deviceOffsetBasis);
+            engine.setDebug(_config.debug);
+            if(!_config.crtDebugFile.empty()) {
+                engine.setCrtDebugFile(_config.crtDebugFile);
+            }
 
 #ifdef BUILD_CUDA
             if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
@@ -1013,6 +1025,11 @@ int main(int argc, char **argv)
     parser.add("", "--pollard", false);
     parser.add("", "--offsets", true);
     parser.add("", "--window-size", true);
+    parser.add("", "--offset-msb", false);
+    parser.add("", "--offset-lsb", false);
+    parser.add("", "--device-offset-msb", false);
+    parser.add("", "--device-offset-lsb", false);
+    parser.add("", "--crt-debug-file", true);
     parser.add("", "--workers", true);
     parser.add("", "--tames", true);
     parser.add("", "--wilds", true);
@@ -1165,6 +1182,16 @@ int main(int argc, char **argv)
                 } catch(...) {
                     throw std::string("invalid argument");
                 }
+            } else if(optArg.equals("", "--offset-msb")) {
+                _config.cliOffsetBasis = PollardEngine::OffsetBasis::MSB;
+            } else if(optArg.equals("", "--offset-lsb")) {
+                _config.cliOffsetBasis = PollardEngine::OffsetBasis::LSB;
+            } else if(optArg.equals("", "--device-offset-msb")) {
+                _config.deviceOffsetBasis = PollardEngine::OffsetBasis::MSB;
+            } else if(optArg.equals("", "--device-offset-lsb")) {
+                _config.deviceOffsetBasis = PollardEngine::OffsetBasis::LSB;
+            } else if(optArg.equals("", "--crt-debug-file")) {
+                _config.crtDebugFile = optArg.arg;
             } else if(optArg.equals("", "--workers")) {
                 try {
                     _config.workers = util::parseUInt32(optArg.arg);

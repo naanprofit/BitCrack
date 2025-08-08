@@ -9,6 +9,7 @@
 #include <set>
 #include <memory>
 #include <chrono>
+#include <string>
 #include "secp256k1.h"
 #include "KeySearchDevice.h"
 #include "PollardTypes.h"
@@ -118,7 +119,17 @@ public:
     // internal LSB offsets and the device-facing MSB list.
     void setCliOffsetBasis(OffsetBasis basis);
 
-    // Accessor for the device-facing offsets (MSB basis).
+    // Update the basis of device-facing offsets. Regenerates the offset lists.
+    void setDeviceOffsetBasis(OffsetBasis basis);
+
+    // Optional CRT milestone debug file (appended)
+    void setCrtDebugFile(const std::string &path) { _crtDebugFile = path; }
+
+    // Control verbose logging
+    void setDebug(bool v) { _debug = v; }
+    bool debug() const { return _debug; }
+
+    // Accessor for the device-facing offsets.
     const std::vector<unsigned int> &deviceOffsets() const { return _deviceOffsets; }
 
     // Public wrapper exposing the internal hashWindow helper.  ``h`` must be
@@ -140,7 +151,7 @@ private:
     std::vector<unsigned int> _cliOffsets;    // offsets as supplied on the CLI
     OffsetBasis _cliBasis;                    // basis of CLI offsets
     std::vector<unsigned int> _offsets;       // little-endian bit offsets of each window
-    std::vector<unsigned int> _deviceOffsets; // offsets normalised to MSB for devices
+    std::vector<unsigned int> _deviceOffsets; // offsets for devices (basis per _deviceBasis)
     std::vector<TargetState> _targets;        // state per target hash
 
     std::unique_ptr<PollardDevice> _device;   // producer of walk results
@@ -152,6 +163,9 @@ private:
     bool _sequential;                         // sequential walk mode
     bool _debug;                              // enable verbose logging
     bool _kernelDebug;                        // enable kernel launch diagnostics
+    OffsetBasis _deviceBasis;                 // basis of device offsets
+
+    std::string _crtDebugFile;                // optional CRT milestone log
 
 
     // Metrics
