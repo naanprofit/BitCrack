@@ -576,10 +576,32 @@ int runPollard()
         wildWorkers = workers - tameWorkers;
     }
 
+    // Helper for converting 256-bit values to uint64_t with saturation
+    auto clampUint64 = [](const secp256k1::uint256 &val, bool *overflow = nullptr) -> uint64_t {
+        bool ov = false;
+        for(int i = 2; i < 8; ++i) {
+            if(val.v[i] != 0) {
+                ov = true;
+                break;
+            }
+        }
+        uint64_t out = ((uint64_t)val.v[1] << 32) | val.v[0];
+        if(overflow) {
+            *overflow = ov;
+        }
+        return ov ? UINT64_MAX : out;
+    };
+
     // Compute span for logging and default max steps
-    secp256k1::uint256 totalSpan256 = _config.endKey.sub(_config.startKey);
-    uint64_t totalSpan = totalSpan256.toUint64() + 1;
-    uint64_t maxStepsLog = _config.maxSteps ? std::min(_config.maxSteps, totalSpan) : totalSpan;
+    secp256k1::uint256 totalSpan256 = _config.endKey.sub(_config.startKey).add(uint64_t(1));
+    bool totalOverflow = false;
+    uint64_t totalSpan = clampUint64(totalSpan256, &totalOverflow);
+    if(totalOverflow) {
+        Logger::log(LogLevel::Warning,
+                    "Key span exceeds 64 bits, clamping to UINT64_MAX");
+    }
+    uint64_t maxStepsLog = _config.maxSteps ?
+        std::min(_config.maxSteps, totalSpan) : totalSpan;
     std::vector<std::array<unsigned int,5>> targetHashes;
 
     if(!_config.targetsFile.empty()) {
@@ -667,8 +689,8 @@ int runPollard()
 
     try {
         while(segmentStart.cmp(_config.endKey) <= 0) {
-            secp256k1::uint256 span256 = _config.endKey.sub(segmentStart);
-            uint64_t span = span256.toUint64() + 1;
+            secp256k1::uint256 span256 = _config.endKey.sub(segmentStart).add(uint64_t(1));
+            uint64_t span = clampUint64(span256);
             uint64_t maxSteps = _config.maxSteps ? std::min(_config.maxSteps, span) : span;
             uint64_t chunk = workers ? span / workers : span;
             if(chunk == 0) {
@@ -712,8 +734,8 @@ int runPollard()
                     if(_config.full || _config.tames) {
                         uint64_t off = rng() % span;
                         st = segmentStart.add(off);
-                        secp256k1::uint256 rem = _config.endKey.sub(st);
-                        uint64_t remSpan = rem.toUint64() + 1;
+                        secp256k1::uint256 rem = _config.endKey.sub(st).add(uint64_t(1));
+                        uint64_t remSpan = clampUint64(rem);
                         steps = std::min<uint64_t>(maxSteps, remSpan);
                     } else {
                         uint64_t off = i * chunk;
@@ -735,12 +757,14 @@ int runPollard()
                     if(_config.full) {
                         uint64_t off = rng() % span;
                         st = segmentStart.add(off);
-                        uint64_t avail = st.sub(segmentStart).toUint64() + 1;
+                        secp256k1::uint256 avail256 = st.sub(segmentStart).add(uint64_t(1));
+                        uint64_t avail = clampUint64(avail256);
                         steps = std::min<uint64_t>(maxSteps, avail);
                     } else {
                         uint64_t off = j * chunk;
                         st = _config.endKey.sub(secp256k1::uint256(off));
-                        uint64_t avail = std::min<uint64_t>(chunk, st.sub(segmentStart).toUint64() + 1);
+                        secp256k1::uint256 avail256 = st.sub(segmentStart).add(uint64_t(1));
+                        uint64_t avail = std::min<uint64_t>(chunk, clampUint64(avail256));
                         steps = std::min<uint64_t>(maxSteps, avail);
                     }
                     PollardEngine::Job job;
