@@ -597,18 +597,15 @@ bool testHashWindowLEEdgeCases() {
 }
 
 class StubDevice : public PollardDevice {
-    PollardMatch _m;
+    PollardWindow _w;
     bool _sent = false;
 public:
-    StubDevice() {
+    explicit StubDevice(unsigned int bits) {
         secp256k1::uint256 k(1);
-        secp256k1::ecpoint p = secp256k1::multiplyPoint(k, secp256k1::G());
-        unsigned int be[5];
-        Hash::hashPublicKeyCompressed(p, be);
-        for(int j = 0; j < 5; ++j) {
-            _m.hash[j] = bswap32(be[4 - j]);
-        }
-        _m.scalar = k;
+        _w.targetIdx = 0;
+        _w.offset = 0;
+        _w.bits = bits;
+        _w.scalarFragment = k;
     }
     void startTameWalk(const secp256k1::uint256 &, uint64_t, const secp256k1::uint256 &, bool) override {
         _sent = false;
@@ -616,9 +613,9 @@ public:
     void startWildWalk(const secp256k1::uint256 &, uint64_t, const secp256k1::uint256 &, bool) override {
         _sent = false;
     }
-    bool popResult(PollardMatch &out) override {
+    bool popResult(PollardWindow &out) override {
         if(_sent) return false;
-        out = _m;
+        out = _w;
         _sent = true;
         return true;
     }
@@ -645,7 +642,7 @@ bool testPollardWindowSizes() {
             100,
             true,
             false);
-        engine.setDevice(std::unique_ptr<PollardDevice>(new StubDevice()));
+        engine.setDevice(std::unique_ptr<PollardDevice>(new StubDevice(w)));
         engine.runTameWalk(secp256k1::uint256(1), 1);
         if(!found) return false;
     }
@@ -821,7 +818,7 @@ bool testCRTMixedOffsetsPython() {
     }
 
     uint256 k0, M;
-    if(!engine.reconstruct(0, k0, M)) {
+    if(!engine.reconstructK0(0, k0, M)) {
         return false;
     }
 
@@ -984,7 +981,7 @@ bool testWindowCRT() {
         std::vector<PollardEngine::Constraint> constraints;
         dev.scanKeyRange(L, U + 1, ws, frags, constraints);
         uint256 k0, M;
-        if(!engine.reconstruct(0, k0, M)) pass = false;
+        if(!engine.reconstructK0(0, k0, M)) pass = false;
         else if(k0.toUint64() != key) pass = false;
     }
 #endif
@@ -1030,7 +1027,7 @@ bool testGpuCrt() {
         std::vector<PollardEngine::Constraint> constraints;
         dev.scanKeyRange(L, U + 1, ws, frags.data(), constraints);
         uint256 k0, M;
-        if(!engine.reconstruct(0, k0, M)) pass = false;
+        if(!engine.reconstructK0(0, k0, M)) pass = false;
         else if(k0.toUint64() != key) pass = false;
     }
 #endif
@@ -1071,7 +1068,7 @@ bool runWindowCRTIntegration() {
     }
 
     uint256 k0, M;
-    if(!engine.reconstruct(0, k0, M)) return false;
+    if(!engine.reconstructK0(0, k0, M)) return false;
     if(k0.toUint64() != key) return false;
     return found;
 }

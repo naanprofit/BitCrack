@@ -16,11 +16,25 @@
 #include <sstream>
 #include <iomanip>
 #include <numeric>
+#include <string>
 #include "../util/RingBuffer.h"
 #include "../util/util.h"
 #include "../Logger/Logger.h"
 
 using namespace secp256k1;
+
+static unsigned int toLEfromMSB(unsigned int off, unsigned int bits) {
+    return 160u - (off + bits);
+}
+
+static void crt_debug_append(const std::string &file,
+                             const secp256k1::uint256 &k0,
+                             const secp256k1::uint256 &modulus) {
+    if(file.empty()) return;
+    std::string line = k0.toString(16) + "," + modulus.toString(16);
+    util::appendToFile(file, line);
+}
+
 
 static std::string hashToString(const unsigned int h[5]) {
     std::ostringstream ss;
@@ -33,11 +47,40 @@ static std::string hashToString(const unsigned int h[5]) {
 
 namespace {
 
+std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int offset,
+                                       unsigned int bits) {
+    std::array<unsigned int,5> out{};
+    if(offset + bits > 160) {
+        return out;
+    }
+    unsigned int word = offset / 32;
+    unsigned int bit  = offset % 32;
+    unsigned int words = (bits + 31) / 32;
+    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
+        uint64_t val = ((uint64_t)h[word + i]) >> bit;
+        if(bit && word + i + 1 < 5) {
+            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
+        }
+        out[i] = static_cast<unsigned int>(val & 0xffffffffULL);
+    }
+    unsigned int maskBits = bits % 32;
+    if(maskBits) {
+        unsigned int mask = (1u << maskBits) - 1u;
+        out[words - 1] &= mask;
+    }
+    for(unsigned int i = words; i < 5; ++i) {
+        out[i] = 0u;
+    }
+    return out;
+}
+
 // Simple CPU implementation of the device interface used for unit tests and
 // as a fallback when no GPU is available.
 class CPUPollardDevice : public PollardDevice {
     unsigned int _windowBits;
-    SimpleRingBuffer<PollardMatch> _buffer;
+    std::vector<unsigned int> _offsets; // CLI-supplied offsets (MSB basis)
+    std::vector<std::array<unsigned int,5>> _targets; // target hashes (little-endian)
+    SimpleRingBuffer<PollardWindow> _buffer;
 
     bool checkPoint(const ecpoint &p) {
         uint64_t mask = ((uint64_t)1 << _windowBits) - 1ULL;
@@ -45,14 +88,16 @@ class CPUPollardDevice : public PollardDevice {
     }
 
 public:
-    explicit CPUPollardDevice(unsigned int windowBits)
-        : _windowBits(windowBits), _buffer(1024) {}
+    CPUPollardDevice(unsigned int windowBits,
+                     const std::vector<unsigned int> &offsets,
+                     const std::vector<std::array<unsigned int,5>> &targets)
+        : _windowBits(windowBits), _offsets(offsets), _targets(targets), _buffer(1024) {}
 
     void startTameWalk(const uint256 &start, uint64_t steps,
                        const uint256 &seed, bool sequential) override;
     void startWildWalk(const uint256 &start, uint64_t steps,
                        const uint256 &seed, bool sequential) override;
-    bool popResult(PollardMatch &out) override { return _buffer.pop(out); }
+    bool popResult(PollardWindow &out) override { return _buffer.pop(out); }
 };
 
 void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
@@ -63,14 +108,27 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     if(sequential) {
         for(uint64_t i = 0; i < steps; ++i) {
             if(checkPoint(p)) {
-                PollardMatch m;
-                m.scalar = k;
                 unsigned int be[5];
                 Hash::hashPublicKeyCompressed(p, be);
+                unsigned int le[5];
                 for(int j = 0; j < 5; ++j) {
-                    m.hash[j] = util::endian(be[4 - j]);
+                    le[j] = util::endian(be[4 - j]);
                 }
-                _buffer.push(m);
+                for(size_t t = 0; t < _targets.size(); ++t) {
+                    for(unsigned int offBE : _offsets) {
+                        if(offBE + _windowBits > 160) continue;
+                        auto want = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+                        auto got  = hashWindowBE(le, offBE, _windowBits);
+                        if(got == want) {
+                            PollardWindow w;
+                            w.targetIdx = static_cast<unsigned int>(t);
+                            w.offset    = toLEfromMSB(offBE, _windowBits);
+                            w.bits      = _windowBits;
+                            w.scalarFragment = k;
+                            _buffer.push(w);
+                        }
+                    }
+                }
             }
             k = k.add(1);
             p = addPoints(p, G());
@@ -92,14 +150,27 @@ void CPUPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
         k = addModN(k, stepVal);
         p = addPoints(p, multiplyPoint(stepVal, G()));
         if(checkPoint(p)) {
-            PollardMatch m;
-            m.scalar = k;
             unsigned int be[5];
             Hash::hashPublicKeyCompressed(p, be);
+            unsigned int le[5];
             for(int j = 0; j < 5; ++j) {
-                m.hash[j] = util::endian(be[4 - j]);
+                le[j] = util::endian(be[4 - j]);
             }
-            _buffer.push(m);
+            for(size_t t = 0; t < _targets.size(); ++t) {
+                for(unsigned int offBE : _offsets) {
+                    if(offBE + _windowBits > 160) continue;
+                    auto want = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+                    auto got  = hashWindowBE(le, offBE, _windowBits);
+                    if(got == want) {
+                        PollardWindow w;
+                        w.targetIdx = static_cast<unsigned int>(t);
+                        w.offset    = toLEfromMSB(offBE, _windowBits);
+                        w.bits      = _windowBits;
+                        w.scalarFragment = k;
+                        _buffer.push(w);
+                    }
+                }
+            }
         }
     }
 }
@@ -114,14 +185,27 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         negG.y = negModP(negG.y);
         for(uint64_t i = 0; i < steps; ++i) {
             if(checkPoint(p)) {
-                PollardMatch m;
-                m.scalar = k;
                 unsigned int be[5];
                 Hash::hashPublicKeyCompressed(p, be);
+                unsigned int le[5];
                 for(int j = 0; j < 5; ++j) {
-                    m.hash[j] = util::endian(be[4 - j]);
+                    le[j] = util::endian(be[4 - j]);
                 }
-                _buffer.push(m);
+                for(size_t t = 0; t < _targets.size(); ++t) {
+                    for(unsigned int offBE : _offsets) {
+                        if(offBE + _windowBits > 160) continue;
+                        auto want = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+                        auto got  = hashWindowBE(le, offBE, _windowBits);
+                        if(got == want) {
+                            PollardWindow w;
+                            w.targetIdx = static_cast<unsigned int>(t);
+                            w.offset    = toLEfromMSB(offBE, _windowBits);
+                            w.bits      = _windowBits;
+                            w.scalarFragment = k;
+                            _buffer.push(w);
+                        }
+                    }
+                }
             }
             if(k.isZero()) {
                 break;
@@ -148,14 +232,27 @@ void CPUPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
         kOffset = addModN(kOffset, stepVal);
         p = addPoints(p, multiplyPoint(stepVal, G()));
         if(checkPoint(p)) {
-            PollardMatch m;
-            m.scalar = kOffset;
             unsigned int be[5];
             Hash::hashPublicKeyCompressed(p, be);
+            unsigned int le[5];
             for(int j = 0; j < 5; ++j) {
-                m.hash[j] = util::endian(be[4 - j]);
+                le[j] = util::endian(be[4 - j]);
             }
-            _buffer.push(m);
+            for(size_t t = 0; t < _targets.size(); ++t) {
+                for(unsigned int offBE : _offsets) {
+                    if(offBE + _windowBits > 160) continue;
+                    auto want = hashWindowBE(_targets[t].data(), offBE, _windowBits);
+                    auto got  = hashWindowBE(le, offBE, _windowBits);
+                    if(got == want) {
+                        PollardWindow w;
+                        w.targetIdx = static_cast<unsigned int>(t);
+                        w.offset    = toLEfromMSB(offBE, _windowBits);
+                        w.bits      = _windowBits;
+                        w.scalarFragment = kOffset;
+                        _buffer.push(w);
+                    }
+                }
+            }
         }
     }
 }
@@ -270,83 +367,63 @@ bool combineCRT(const PollardEngine::Constraint &a,
 // is the bit offset from the most significant bit and ``ws`` is the window
 // size.  The result is returned as five little-endian words with any unused
 // high words cleared.
-std::array<unsigned int,5> hashWindowBE(const unsigned int h[5], unsigned int offset,
-                                        unsigned int bits) {
-    std::array<unsigned int,5> out{};
-    if(offset + bits > 160) {
-        return out;
-    }
-
-    unsigned int word = offset / 32;
-    unsigned int bit  = offset % 32;
-    unsigned int words = (bits + 31) / 32;        // number of output words
-    for(unsigned int i = 0; i < words && word + i < 5; ++i) {
-        uint64_t val = ((uint64_t)h[word + i]) >> bit;
-        if(bit && word + i + 1 < 5) {
-            val |= ((uint64_t)h[word + i + 1]) << (32 - bit);
-        }
-        out[i] = static_cast<unsigned int>(val & 0xffffffffULL);
-    }
-    unsigned int maskBits = bits % 32;
-    if(maskBits) {
-        unsigned int mask = (1u << maskBits) - 1u;
-        out[words - 1] &= mask;
-    }
-    for(unsigned int i = words; i < 5; ++i) {
-        out[i] = 0u;
-    }
-    return out;
-}
-
 } // namespace
-
-void PollardEngine::handleMatch(const PollardMatch &m) {
-    for(size_t t = 0; t < _targets.size(); ++t) {
-        for(unsigned int off : _offsets) {
-            if(_targets[t].seenOffsets.count(off)) {
-                continue;
-            }
-
-            auto want = hashWindowBE(_targets[t].hash.data(), off, _windowBits);
-            auto got  = hashWindowBE(m.hash, off, _windowBits);
-            if(got == want) {
-                unsigned int modBits = 160u - off;
-                if(modBits > 256) {
-                    continue;
-                }
-                uint256 mask = maskBits(modBits);
-                uint256 rem;
-                for(int w = 0; w < 8; ++w) {
-                    rem.v[w] = m.scalar.v[w] & mask.v[w];
-                }
-                uint256 mod(0);
-                if(modBits < 256) {
-                    mod.v[modBits / 32] = (1u << (modBits % 32));
-                }
-                processWindow(t, off, {mod, rem});
-            }
-        }
-    }
-}
 
 void PollardEngine::pollDevice() {
     if(!_device) {
         return;
     }
-    PollardMatch m;
+    PollardWindow w;
     auto delay = std::chrono::milliseconds(_pollInterval);
     while(true) {
         size_t processed = 0;
-        while(processed < _batchSize && _device->popResult(m)) {
-            handleMatch(m);
+        while(processed < _batchSize && _device->popResult(w)) {
+            unsigned int off = (_deviceOffsetBasis == OffsetBasis::MSB)
+                               ? toLEfromMSB(w.offset, w.bits)
+                               : w.offset;
+            if(_debug) {
+                Logger::log(LogLevel::Debug,
+                            "Fragment target=" + util::format(w.targetIdx) +
+                            " offset=" + util::format(off));
+            }
+            unsigned int modBits = off + w.bits;
+            if(modBits > 256) {
+                processed++;
+                continue;
+            }
+            uint256 mask = maskBits(modBits);
+            uint256 rem;
+            for(int i = 0; i < 8; ++i) {
+                rem.v[i] = w.scalarFragment.v[i] & mask.v[i];
+            }
+            uint256 mod(0);
+            if(modBits < 256) {
+                mod.v[modBits / 32] = (1u << (modBits % 32));
+            }
+            processWindow(w.targetIdx, off, {mod, rem});
             processed++;
         }
         if(processed == 0) {
             std::this_thread::sleep_for(delay);
-            if(!_device->popResult(m)) {
+            if(!_device->popResult(w)) {
                 break;
             }
-            handleMatch(m);
+            unsigned int off = (_deviceOffsetBasis == OffsetBasis::MSB)
+                               ? toLEfromMSB(w.offset, w.bits)
+                               : w.offset;
+            unsigned int modBits = off + w.bits;
+            if(modBits <= 256) {
+                uint256 mask = maskBits(modBits);
+                uint256 rem;
+                for(int i = 0; i < 8; ++i) {
+                    rem.v[i] = w.scalarFragment.v[i] & mask.v[i];
+                }
+                uint256 mod(0);
+                if(modBits < 256) {
+                    mod.v[modBits / 32] = (1u << (modBits % 32));
+                }
+                processWindow(w.targetIdx, off, {mod, rem});
+            }
         }
         std::this_thread::sleep_for(delay);
     }
@@ -365,27 +442,59 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              bool kernelDebug)
     : _callback(cb), _windowBits(windowBits),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
-      _sequential(sequential), _debug(debug), _kernelDebug(kernelDebug) {
-    // Filter offsets supplied by the user to remove any entry that would extend
-    // beyond the 160-bit RIPEMD160 digest. Offsets are specified relative to
-    // the most-significant bit of the hash, so convert them to the
-    // little-endian bit positions used throughout the engine.
-    for(unsigned int off : offsets) {
-        if(off + windowBits <= 160) {
-            unsigned int offLE = 160u - (off + windowBits);
-            _offsets.push_back(offLE);
-        }
-    }
+      _sequential(sequential), _kernelDebug(kernelDebug),
+      _cliOffsetBasis(OffsetBasis::MSB),
+      _deviceOffsetBasis(OffsetBasis::LSB),
+      _crtDebugFile(""),
+      _debug(debug) {
+    _cliOffsets = offsets;
+    addOffsets(offsets);
     for(const auto &t : targets) {
         TargetState s;
         s.hash = t;
         _targets.push_back(s);
     }
-    _device = std::unique_ptr<PollardDevice>(new CPUPollardDevice(windowBits));
+    _device = std::unique_ptr<PollardDevice>(new CPUPollardDevice(windowBits, offsets, targets));
+}
+
+void PollardEngine::setCliOffsetBasis(OffsetBasis basis) {
+    _cliOffsetBasis = basis;
+    addOffsets(_cliOffsets);
+}
+
+void PollardEngine::setDeviceOffsetBasis(OffsetBasis basis) {
+    _deviceOffsetBasis = basis;
+}
+
+void PollardEngine::setCrtDebugFile(const std::string &file) {
+    _crtDebugFile = file;
+}
+
+void PollardEngine::setDebug(bool enabled) {
+    _debug = enabled;
 }
 
 void PollardEngine::setDevice(std::unique_ptr<PollardDevice> device) {
     _device = std::move(device);
+}
+
+void PollardEngine::addOffsets(const std::vector<unsigned int> &offsets) {
+    _offsets.clear();
+    for(unsigned int off : offsets) {
+        unsigned int mapped = off;
+        if(_cliOffsetBasis == OffsetBasis::MSB) {
+            if(off + _windowBits > 160) continue;
+            mapped = toLEfromMSB(off, _windowBits);
+        } else {
+            if(off + _windowBits > 160) continue;
+        }
+        _offsets.push_back(mapped);
+        if(_debug) {
+            Logger::log(LogLevel::Debug,
+                        "Offset mapping cli=" + util::format(off) +
+                        " engine=" + util::format(mapped));
+        }
+    }
 }
 
 void PollardEngine::addConstraint(size_t target, const uint256 &modulus,
@@ -397,7 +506,7 @@ void PollardEngine::addConstraint(size_t target, const uint256 &modulus,
     _targets[target].constraints.push_back(c);
 }
 
-bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
+bool PollardEngine::reconstructK0(size_t target, uint256 &k0, uint256 &modulus) {
     if(target >= _targets.size()) {
         return false;
     }
@@ -428,6 +537,7 @@ bool PollardEngine::reconstruct(size_t target, uint256 &k0, uint256 &modulus) {
 
     k0 = acc.value;
     modulus = acc.modulus;
+    crt_debug_append(_crtDebugFile, k0, modulus);
     return true;
 }
 
@@ -465,7 +575,7 @@ void PollardEngine::processWindow(size_t targetIdx, unsigned int offset,
     _reconstructionAttempts++;
     uint256 k0;
     uint256 modulus;
-    if(reconstruct(targetIdx, k0, modulus)) {
+    if(reconstructK0(targetIdx, k0, modulus)) {
         enumerateCandidates(k0, modulus, _L, _U);
     }
 

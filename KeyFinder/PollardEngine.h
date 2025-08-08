@@ -24,14 +24,14 @@ public:
                                const secp256k1::uint256 &seed, bool sequential) = 0;
     virtual void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
                                const secp256k1::uint256 &seed, bool sequential) = 0;
-    // CPU implementations may still emit ``PollardMatch`` results which are
-    // converted to ``PollardWindow`` objects by the engine.  GPU
-    // implementations can enqueue ``PollardWindow`` structures directly.
-    virtual bool popResult(PollardMatch &out) = 0;
+    // Devices emit ``PollardWindow`` structures describing matching
+    // fragments discovered during a walk.
+    virtual bool popResult(PollardWindow &out) = 0;
 };
 
 class PollardEngine {
 public:
+    enum class OffsetBasis { MSB, LSB };
     struct Constraint {
         secp256k1::uint256 modulus;     // modulus (0 represents 2^256)
         secp256k1::uint256 value;       // value modulo ``modulus``
@@ -62,14 +62,20 @@ public:
                   bool debug = false,
                   bool kernelDebug = false);
 
+    void setCliOffsetBasis(OffsetBasis basis);
+    void setDeviceOffsetBasis(OffsetBasis basis);
+    void setCrtDebugFile(const std::string &file);
+    void setDebug(bool enabled);
+    bool debug() const { return _debug; }
+
     // Add a constraint of the form k \equiv value (mod ``modulus``) for ``target``
     void addConstraint(size_t target, const secp256k1::uint256 &modulus,
                        const secp256k1::uint256 &value);
 
     // Attempt to reconstruct the private key for ``target`` from accumulated
     // constraints using a generic CRT solver.
-    bool reconstruct(size_t target, secp256k1::uint256 &k0,
-                     secp256k1::uint256 &modulus);
+    bool reconstructK0(size_t target, secp256k1::uint256 &k0,
+                       secp256k1::uint256 &modulus);
 
     // Consume a window constraint produced by a device. This function
     // accumulates the constraint, attempts key reconstruction and, on success,
@@ -133,8 +139,12 @@ private:
     secp256k1::uint256 _L;                    // search lower bound
     secp256k1::uint256 _U;                    // search upper bound
     bool _sequential;                         // sequential walk mode
-    bool _debug;                              // enable verbose logging
     bool _kernelDebug;                        // enable kernel launch diagnostics
+    OffsetBasis _cliOffsetBasis;
+    OffsetBasis _deviceOffsetBasis;
+    std::string _crtDebugFile;
+    bool _debug;                              // enable verbose logging
+    std::vector<unsigned int> _cliOffsets;
 
 
     // Metrics
@@ -150,8 +160,8 @@ private:
                              const secp256k1::uint256 &modulus,
                              const secp256k1::uint256 &L,
                              const secp256k1::uint256 &U);
-    void handleMatch(const PollardMatch &m);
     void pollDevice();
+    void addOffsets(const std::vector<unsigned int> &offsets);
 
     static std::array<unsigned int,5> hashWindow(const unsigned int h[5], unsigned int offset,
                                                  unsigned int bits);
