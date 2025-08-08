@@ -233,6 +233,5 @@ extern "C" void launchWindowKernel(dim3 grid, dim3 block,
                                                 target_frags, out_buf,
                                                 d_out_count, max_out);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaStreamSynchronize(stream));
 }
 
