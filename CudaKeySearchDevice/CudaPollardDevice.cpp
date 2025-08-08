@@ -485,12 +485,15 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     CUDA_CHECK(cudaMalloc(&d_out, sizeof(MatchRecord) * 1024));
     CUDA_CHECK(cudaMalloc(&d_count, sizeof(uint32_t)));
 
-    CUDA_CHECK(cudaMemcpy(d_offsets, offsetsLE.data(),
-                          offsetsCount * sizeof(uint32_t),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_targets, targetFragments,
-                          offsetsCount * sizeof(uint32_t),
-                          cudaMemcpyHostToDevice));
+    cudaStream_t stream;
+    CUDA_CHECK(cudaStreamCreate(&stream));
+
+    CUDA_CHECK(cudaMemcpyAsync(d_offsets, offsetsLE.data(),
+                              offsetsCount * sizeof(uint32_t),
+                              cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(d_targets, targetFragments,
+                              offsetsCount * sizeof(uint32_t),
+                              cudaMemcpyHostToDevice, stream));
 
     std::vector<MatchRecord> hostOut(1024);
     std::unordered_set<uint32_t> seen;
@@ -504,23 +507,31 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
     for(uint64_t chunkStart = start_k; chunkStart < end_k && seen.size() < offsetsCount; chunkStart += chunk) {
         uint64_t range = std::min(chunk, end_k - chunkStart);
 
-        
 #if BUILD_CUDA
         launchWindowKernel(dim3(), dim3(),
                            chunkStart, range, windowBits,
                            d_offsets, offsetsCount,
                            d_targets, d_out,
                            d_count,
-                           static_cast<unsigned int>(hostOut.size()));
+                           static_cast<unsigned int>(hostOut.size()),
+                           stream);
 #endif
 
         uint32_t hCount = 0;
-        CUDA_CHECK(cudaMemcpy(&hCount, d_count, sizeof(uint32_t),
-                              cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpyAsync(&hCount, d_count, sizeof(uint32_t),
+                                  cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaMemcpyAsync(hostOut.data(), d_out,
+                                  hostOut.size() * sizeof(MatchRecord),
+                                  cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
         if(hCount > hostOut.size()) hCount = hostOut.size();
-        CUDA_CHECK(cudaMemcpy(hostOut.data(), d_out,
-                              hCount * sizeof(MatchRecord),
-                              cudaMemcpyDeviceToHost));
+
+        if(_debug) {
+            Logger::log(LogLevel::Debug,
+                        "Processed " + util::format(range) +
+                            " windows, matches " +
+                            util::format(hCount));
+        }
 
         for(uint32_t i = 0; i < hCount; ++i) {
             const MatchRecord &r = hostOut[i];
@@ -551,6 +562,7 @@ void CudaPollardDevice::scanKeyRange(uint64_t start_k,
         }
     }
 
+    CUDA_CHECK(cudaStreamDestroy(stream));
     CUDA_CHECK(cudaFree(d_offsets));
     CUDA_CHECK(cudaFree(d_targets));
     CUDA_CHECK(cudaFree(d_out));

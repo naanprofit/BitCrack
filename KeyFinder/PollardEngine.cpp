@@ -601,19 +601,23 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
     CUDA_CHECK(cudaMalloc(&dev_out_buf, chunk * offsetsCount * sizeof(MatchRecord)));
     CUDA_CHECK(cudaMalloc(&dev_out_count, sizeof(uint32_t)));
 
-    CUDA_CHECK(cudaMemcpy(dev_offsets, offsetsLE.data(),
-                          offsetsCount * sizeof(uint32_t),
-                          cudaMemcpyHostToDevice));
+    cudaStream_t stream;
+    CUDA_CHECK(cudaStreamCreate(&stream));
 
+    CUDA_CHECK(cudaMemcpyAsync(dev_offsets, offsetsLE.data(),
+                              offsetsCount * sizeof(uint32_t),
+                              cudaMemcpyHostToDevice, stream));
+
+    std::vector<MatchRecord> hostBuf(chunk * offsetsCount);
     std::vector<uint32_t> hostFrags(offsetsCount);
     for(size_t t = 0; t < _targets.size(); ++t) {
         for(uint32_t i = 0; i < offsetsCount; ++i) {
             auto win = hashWindow(_targets[t].hash.data(), offsetsLE[i], _windowBits);
             hostFrags[i] = win[0] & mask;
         }
-        CUDA_CHECK(cudaMemcpy(dev_target_frags, hostFrags.data(),
-                              offsetsCount * sizeof(uint32_t),
-                              cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpyAsync(dev_target_frags, hostFrags.data(),
+                                  offsetsCount * sizeof(uint32_t),
+                                  cudaMemcpyHostToDevice, stream));
 
         uint64_t remaining = range_len;
         uint64_t chunkStart = start_k;
@@ -622,15 +626,24 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
             cudaEvent_t evStart, evStop;
             CUDA_CHECK(cudaEventCreate(&evStart));
             CUDA_CHECK(cudaEventCreate(&evStop));
-            CUDA_CHECK(cudaEventRecord(evStart));
+            CUDA_CHECK(cudaEventRecord(evStart, stream));
             launchWindowKernel(dim3(), dim3(),
                                chunkStart, thisChunk, _windowBits,
                                dev_offsets, offsetsCount,
                                dev_target_frags, dev_out_buf,
                                dev_out_count,
-                               static_cast<unsigned int>(chunk * offsetsCount));
-            CUDA_CHECK(cudaEventRecord(evStop));
-            CUDA_CHECK(cudaEventSynchronize(evStop));
+                               static_cast<unsigned int>(chunk * offsetsCount),
+                               stream);
+            CUDA_CHECK(cudaEventRecord(evStop, stream));
+
+            uint32_t hitCount = 0;
+            CUDA_CHECK(cudaMemcpyAsync(&hitCount, dev_out_count,
+                                      sizeof(uint32_t),
+                                      cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaMemcpyAsync(hostBuf.data(), dev_out_buf,
+                                      hostBuf.size() * sizeof(MatchRecord),
+                                      cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
             float ms = 0.0f;
             CUDA_CHECK(cudaEventElapsedTime(&ms, evStart, evStop));
             CUDA_CHECK(cudaEventDestroy(evStart));
@@ -640,16 +653,13 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
             std::snprintf(buf, sizeof(buf), "GPU throughput: %0.2f windows/s", throughput);
             Logger::log(LogLevel::Info, buf);
 
-            uint32_t hitCount = 0;
-            CUDA_CHECK(cudaMemcpy(&hitCount, dev_out_count,
-                                  sizeof(uint32_t),
-                                  cudaMemcpyDeviceToHost));
-            std::vector<MatchRecord> hostBuf(hitCount);
-            if(hitCount) {
-                CUDA_CHECK(cudaMemcpy(hostBuf.data(), dev_out_buf,
-                                      hitCount * sizeof(MatchRecord),
-                                      cudaMemcpyDeviceToHost));
+            if(_kernelDebug) {
+                Logger::log(LogLevel::Debug,
+                            "Processed " + util::format(thisChunk) +
+                                " windows, matches " +
+                                util::format(hitCount));
             }
+
             for(uint32_t i = 0; i < hitCount; ++i) {
                 const MatchRecord &r = hostBuf[i];
                 uint64_t mod = 1ULL << (r.offset + _windowBits);
@@ -662,6 +672,7 @@ void PollardEngine::enumerateCandidates(const uint256 &k0, const uint256 &modulu
         }
     }
 
+    CUDA_CHECK(cudaStreamDestroy(stream));
     CUDA_CHECK(cudaFree(dev_offsets));
     CUDA_CHECK(cudaFree(dev_target_frags));
     CUDA_CHECK(cudaFree(dev_out_buf));
