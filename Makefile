@@ -136,7 +136,12 @@ dir_addrgen:	dir_cmdparse dir_addressutil dir_secp256k1lib
 dir_clunittest: dir_clutil
 	make --directory CLUnitTests
 
-pollard-tests: dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil dir_logger
+POLLARD_DEPS=dir_secp256k1lib dir_cryptoutil dir_util dir_addressutil dir_logger
+ifeq ($(BUILD_CUDA),1)
+POLLARD_DEPS+=dir_cudaKeySearchDevice
+endif
+
+pollard-tests: $(POLLARD_DEPS)
 	$(MAKE) -C PollardTests BUILD_CUDA=$(BUILD_CUDA) BUILD_OPENCL=$(BUILD_OPENCL) pollard-tests
 
 .PHONY: cpu pollard-tests

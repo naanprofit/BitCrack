@@ -16,8 +16,8 @@
 #if BUILD_CUDA
 #include <cuda_runtime.h>
 #include "../CudaKeySearchDevice/CudaPollardDevice.h"
-bool runCudaScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]);
-bool runCudaHashWindow(const unsigned int h[5], unsigned int offset,
+extern "C" bool runCudaScalarOne(unsigned int x[8], unsigned int y[8], unsigned int hash[5]);
+extern "C" bool runCudaHashWindow(const unsigned int h[5], unsigned int offset,
                         unsigned int bits, unsigned int out[5]);
 #endif
 
