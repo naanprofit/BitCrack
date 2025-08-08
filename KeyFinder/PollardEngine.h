@@ -132,6 +132,10 @@ public:
     // Accessor for the device-facing offsets.
     const std::vector<unsigned int> &deviceOffsets() const { return _deviceOffsets; }
 
+    // Record and query the total number of steps executed by the device
+    void setStepCount(uint64_t steps) { _stepsProcessed = steps; }
+    uint64_t stepCount() const { return _stepsProcessed; }
+
     // Public wrapper exposing the internal hashWindow helper.  ``h`` must be
     // supplied in little-endian word order.  The returned array contains the
     // extracted window as five 32-bit words with unused high words set to
@@ -170,6 +174,7 @@ private:
 
     // Metrics
     uint64_t _windowsProcessed = 0;           // number of windows consumed
+    uint64_t _stepsProcessed = 0;             // total walk steps taken by device
     uint64_t _reconstructionAttempts = 0;     // number of CRT solves attempted
     uint64_t _reconstructionSuccess = 0;      // successful reconstructions
     std::chrono::steady_clock::time_point _startTime; // timing for throughput

@@ -102,6 +102,7 @@ void runWalk(PollardEngine &engine,
     cl_uint computeUnits = 1;
     clGetDeviceInfo(devId, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &computeUnits, NULL);
     size_t global = local * computeUnits;
+    engine.setStepCount(static_cast<uint64_t>(steps) * static_cast<uint64_t>(global));
 
     if(debug) {
         Logger::log(LogLevel::Debug,

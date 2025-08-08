@@ -143,6 +143,12 @@ or `make cpu`. The feature is enabled with the following options:
 Target addresses are decoded to RIPEMD160 hashes in little-endian order.
 Bit offsets therefore start at the least significant bit of the digest.
 
+During execution the engine reports two metrics. *Step throughput* counts the
+total number of walk steps performed per second across the device. *Window hits*
+indicates how many bit windows matched the supplied targets and were processed
+each second. These metrics help differentiate the raw walking speed from the
+rate at which useful constraints are gathered.
+
 The union of all windows must cover 256 bits for a full reconstruction.
 Tame and wild walks normally run purely on the CPU and are currently best
 suited for small demonstrations or research. By default the engine performs
