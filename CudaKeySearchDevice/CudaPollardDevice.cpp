@@ -123,6 +123,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     }
 
     unsigned int totalThreads = threadsPerBlock * blocks;
+    _engine.setStepCount(static_cast<uint64_t>(steps) * totalThreads);
 
     if(_debug) {
         Logger::log(LogLevel::Debug,
@@ -289,6 +290,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     }
 
     unsigned int totalThreads = threadsPerBlock * blocks;
+    _engine.setStepCount(static_cast<uint64_t>(steps) * totalThreads);
 
     if(_debug) {
         Logger::log(LogLevel::Debug,

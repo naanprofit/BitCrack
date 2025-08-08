@@ -528,9 +528,23 @@ void PollardEngine::processWindow(size_t targetIdx, unsigned int offset,
         auto now = std::chrono::steady_clock::now();
         double secs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _startTime).count() / 1000.0;
         if(secs > 0) {
-            double rate = static_cast<double>(_windowsProcessed) / secs;
-            Logger::log(LogLevel::Info,
-                        "GPU throughput: " + util::format(static_cast<uint64_t>(rate)) + " windows/s");
+            double stepRate = (_stepsProcessed > 0)
+                                  ? static_cast<double>(_stepsProcessed) / secs
+                                  : 0.0;
+            double windowRate = static_cast<double>(_windowsProcessed) / secs;
+            if(stepRate > 0.0) {
+                Logger::log(LogLevel::Info,
+                            "GPU step throughput: " +
+                                util::format(static_cast<uint64_t>(stepRate)) +
+                                " steps/s, window hit rate: " +
+                                util::format(static_cast<uint64_t>(windowRate)) +
+                                " windows/s");
+            } else {
+                Logger::log(LogLevel::Info,
+                            "GPU window hit rate: " +
+                                util::format(static_cast<uint64_t>(windowRate)) +
+                                " windows/s");
+            }
         }
     }
 }
@@ -751,6 +765,7 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, const uint
     }
 
     _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
+    _stepsProcessed = steps;
     _startTime = std::chrono::steady_clock::now();
 
     if(_sequential) {
@@ -769,10 +784,16 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, const uint
 
     auto end = std::chrono::steady_clock::now();
     double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end - _startTime).count() / 1000.0;
-    if(secs > 0) {
-        double rate = static_cast<double>(_windowsProcessed) / secs;
+    uint64_t stepTotal = _stepsProcessed;
+    if(secs > 0 && stepTotal > 0) {
+        double stepRate = static_cast<double>(stepTotal) / secs;
+        double windowRate = static_cast<double>(_windowsProcessed) / secs;
         Logger::log(LogLevel::Info,
-                    "GPU throughput: " + util::format(static_cast<uint64_t>(rate)) + " windows/s");
+                    "GPU step throughput: " + util::format(static_cast<uint64_t>(stepRate)) +
+                    " steps/s (" + util::format(stepTotal) + " total)");
+        Logger::log(LogLevel::Info,
+                    "GPU window hits: " + util::format(_windowsProcessed) +
+                    " (" + util::format(static_cast<uint64_t>(windowRate)) + " windows/s)");
     }
     Logger::log(LogLevel::Info,
                 "CPU reconstructions: " + util::format(_reconstructionSuccess) + "/" +
@@ -789,6 +810,7 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
     }
 
     _windowsProcessed = _reconstructionAttempts = _reconstructionSuccess = 0;
+    _stepsProcessed = steps;
     _startTime = std::chrono::steady_clock::now();
 
     if(_sequential) {
@@ -807,10 +829,16 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
 
     auto end = std::chrono::steady_clock::now();
     double secs = std::chrono::duration_cast<std::chrono::milliseconds>(end - _startTime).count() / 1000.0;
-    if(secs > 0) {
-        double rate = static_cast<double>(_windowsProcessed) / secs;
+    uint64_t stepTotal = _stepsProcessed;
+    if(secs > 0 && stepTotal > 0) {
+        double stepRate = static_cast<double>(stepTotal) / secs;
+        double windowRate = static_cast<double>(_windowsProcessed) / secs;
         Logger::log(LogLevel::Info,
-                    "GPU throughput: " + util::format(static_cast<uint64_t>(rate)) + " windows/s");
+                    "GPU step throughput: " + util::format(static_cast<uint64_t>(stepRate)) +
+                    " steps/s (" + util::format(stepTotal) + " total)");
+        Logger::log(LogLevel::Info,
+                    "GPU window hits: " + util::format(_windowsProcessed) +
+                    " (" + util::format(static_cast<uint64_t>(windowRate)) + " windows/s)");
     }
     Logger::log(LogLevel::Info,
                 "CPU reconstructions: " + util::format(_reconstructionSuccess) + "/" +
