@@ -1073,6 +1073,35 @@ bool testGpuCrt() {
     return pass;
 }
 
+bool testHashWindowBases() {
+    const unsigned int be[5] = {
+        0x751e76e8u,
+        0x199196d4u,
+        0x54941c45u,
+        0xd1b3a323u,
+        0xf1433bd6u
+    };
+    unsigned int le[5];
+    unsigned int h[5];
+    secp256k1::uint256::importBigEndian(be, 5).exportWords(h, 5);
+
+    unsigned int ws = 20u;
+    std::vector<unsigned int> offsetsLE = {0u, 20u, 40u, 60u};
+    for(unsigned int offLE : offsetsLE) {
+        unsigned int offBE = PollardEngine::convertOffset(offLE, ws);
+        auto expected = hashWindowBE(h, offBE, ws);
+        auto gotBE = PollardEngine::publicHashWindow(h, offBE, ws);
+        auto gotLE = PollardEngine::publicHashWindow(h, offLE, ws);
+        if(gotBE != expected) {
+            return false;
+        }
+        if(gotLE == gotBE) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool testOffsetBasisTranslation() {
     using namespace secp256k1;
     std::vector<unsigned int> offsetsLSB = {0u, 8u};
@@ -1148,6 +1177,7 @@ int main(int argc, char **argv){
     if(!testHashPublicKeyVectors()) { std::cout<<"hash public key vectors failed"<<std::endl; fails++; }
     if(!testHashWindowLEPython()) { std::cout<<"hash window python failed"<<std::endl; fails++; }
     if(!testCRTMixedOffsetsPython()) { std::cout<<"crt mixed python failed"<<std::endl; fails++; }
+    if(!testHashWindowBases()) { std::cout<<"hash window bases failed"<<std::endl; fails++; }
     if(!testOffsetBasisTranslation()) { std::cout<<"offset basis translation failed"<<std::endl; fails++; }
     if(!testCudaScanKeyRange()) { std::cout<<"scan key range failed"<<std::endl; fails++; }
     if(!testWindowCRT()) { std::cout<<"window CRT test failed"<<std::endl; fails++; }
