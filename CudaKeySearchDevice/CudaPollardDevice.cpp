@@ -220,7 +220,7 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
         unsigned int offsetLE = h_out[i].offset;
-        unsigned int modBits  = 160u - offsetLE;
+        unsigned int modBits  = offsetLE + _windowBits;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
@@ -415,7 +415,7 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     uint32_t count = (h_count > maxOut) ? maxOut : h_count;
     for(uint32_t i = 0; i < count; ++i) {
         unsigned int offsetLE = h_out[i].offset;
-        unsigned int modBits  = 160u - offsetLE;
+        unsigned int modBits  = offsetLE + _windowBits;
         secp256k1::uint256 rem;
         for(int j = 0; j < 8; ++j) {
             rem.v[j] = h_out[i].k[j];
