@@ -79,12 +79,15 @@ typedef struct {
     uint32_t windowSize = 0;
     uint32_t workers = 1;
     uint32_t tames = 0;       // number of tame workers
+    uint32_t wilds = 0;       // number of wild workers
     uint64_t maxSteps = 0;    // maximum steps per worker
     uint32_t pollBatch = 1024;
     uint32_t pollInterval = 100;
     bool full = false;
     bool deterministic = false;
     bool debug = false;
+    bool debugKernel = false;
+    bool selftest = false;
 }RunConfig;
 
 static RunConfig _config;
@@ -281,6 +284,7 @@ void usage()
     printf("--window-size N        Bits per window (default 8)\n");
     printf("--workers N            Total workers per round (default 1)\n");
     printf("--tames N              Number of tame workers (default workers/2)\n");
+    printf("--wilds N              Number of wild workers (default workers - tames)\n");
     printf("--max_steps N         Maximum steps per worker (default span)\n");
     printf("--poll-batch N        Windows processed per poll (default 1024)\n");
     printf("--poll-interval MS    Polling interval in milliseconds (default 100)\n");
@@ -289,6 +293,8 @@ void usage()
     printf("--full                 Relaunch walks until key is found\n");
     printf("--deterministic       Use sequential deterministic walks (still uses GPU kernels)\n");
     printf("--debug               Enable verbose Pollard debugging\n");
+    printf("--debug-kernel        Enable verbose kernel launch diagnostics\n");
+    printf("--selftest            Run a GPU self-test before starting\n");
     printf("\nAt least one target must be specified via an address, --hash160, or --pubkey.\n");
 }
 
@@ -531,16 +537,37 @@ int runBruteForce()
 }
 #endif
 
+static bool pollardSelfTest();
+
 int runPollard()
 {
     Logger::log(LogLevel::Info, "Pollard Rho search selected");
+
+    if(_config.selftest) {
+        if(!pollardSelfTest()) {
+            return 1;
+        }
+    }
 
     unsigned int window = _config.windowSize ? _config.windowSize : 8;
     std::vector<unsigned int> offsets = _config.offsets;
 
     uint32_t workers = _config.workers ? _config.workers : 1;
-    uint32_t tameWorkers = _config.tames ? std::min(_config.tames, workers) : workers / 2;
-    uint32_t wildWorkers = workers > tameWorkers ? (workers - tameWorkers) : 0;
+    uint32_t tameWorkers;
+    uint32_t wildWorkers;
+    if(_config.tames && _config.wilds) {
+        tameWorkers = std::min(_config.tames, workers);
+        wildWorkers = std::min(_config.wilds, workers - tameWorkers);
+    } else if(_config.tames) {
+        tameWorkers = std::min(_config.tames, workers);
+        wildWorkers = workers > tameWorkers ? (workers - tameWorkers) : 0;
+    } else if(_config.wilds) {
+        wildWorkers = std::min(_config.wilds, workers);
+        tameWorkers = workers > wildWorkers ? (workers - wildWorkers) : 0;
+    } else {
+        tameWorkers = workers / 2;
+        wildWorkers = workers - tameWorkers;
+    }
 
     // Compute span for logging and default max steps
     secp256k1::uint256 totalSpan256 = _config.endKey.sub(_config.startKey);
@@ -645,19 +672,20 @@ int runPollard()
                                  segmentStart, _config.endKey,
                                  _config.pollBatch, _config.pollInterval,
                                  true,
-                                 _config.debug);
+                                 _config.debug,
+                                 _config.debugKernel);
 
 #ifdef BUILD_CUDA
             if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
                 engine.setDevice(std::unique_ptr<CudaPollardDevice>(
                     new CudaPollardDevice(engine, window, offsets, targetHashes,
-                                           _config.debug, _config.gridDim,
+                                           _config.debugKernel, _config.gridDim,
                                            _config.blockDim)));
             }
 #endif
 #ifdef BUILD_OPENCL
             if(_devices[_config.device].type == DeviceManager::DeviceType::OpenCL) {
-                engine.setDevice(std::unique_ptr<CLPollardDevice>(new CLPollardDevice(engine, window, offsets, targetHashes, _config.debug)));
+                engine.setDevice(std::unique_ptr<CLPollardDevice>(new CLPollardDevice(engine, window, offsets, targetHashes, _config.debugKernel)));
             }
 #endif
 
@@ -744,6 +772,58 @@ int runPollard()
     }
 
     return 0;
+}
+
+static bool pollardSelfTest()
+{
+#if defined(BUILD_CUDA) || defined(BUILD_OPENCL)
+    if(_devices.empty()) {
+        return true;
+    }
+#if BUILD_CUDA
+    if(_devices[_config.device].type == DeviceManager::DeviceType::CUDA) {
+        using namespace secp256k1;
+        uint64_t L = 0, U = 1000;
+        uint64_t key = 123;
+        unsigned int ws = 8;
+        std::vector<unsigned int> offsets = {0u, 8u};
+        ecpoint P = multiplyPoint(uint256(key), G());
+        uint32_t mask = (ws >= 32) ? 0xffffffffu : ((1u << ws) - 1u);
+        uint32_t frags[2];
+        for(size_t i = 0; i < offsets.size(); ++i) {
+            frags[i] = (P.x.v[0] >> offsets[i]) & mask;
+        }
+        unsigned int be[5];
+        Hash::hashPublicKeyCompressed(P, be);
+        std::array<unsigned int,5> target;
+        for(int i = 0; i < 5; ++i) {
+            target[i] = util::endian(be[4 - i]);
+        }
+        PollardEngine engine([](KeySearchResult){}, ws, offsets, {target},
+                             uint256(L), uint256(U), 1024, 100, false, false,
+                             _config.debugKernel);
+        CudaPollardDevice dev(engine, ws, offsets, {target}, _config.debugKernel);
+        std::vector<PollardEngine::Constraint> constraints;
+        dev.scanKeyRange(L, U + 1, ws, frags, constraints);
+        bool pass = constraints.size() == offsets.size() &&
+                    engine.foundOffsets() == offsets.size();
+        if(pass) {
+            Logger::log(LogLevel::Info, "Pollard self-test passed");
+        } else {
+            Logger::log(LogLevel::Error, "Pollard self-test failed");
+        }
+        return pass;
+    }
+#endif
+#if BUILD_OPENCL
+    if(_devices[_config.device].type == DeviceManager::DeviceType::OpenCL) {
+        Logger::log(LogLevel::Warning,
+                    "Pollard self-test not implemented for OpenCL devices");
+        return true;
+    }
+#endif
+#endif
+    return true;
 }
 
 int run()
@@ -935,6 +1015,7 @@ int main(int argc, char **argv)
     parser.add("", "--window-size", true);
     parser.add("", "--workers", true);
     parser.add("", "--tames", true);
+    parser.add("", "--wilds", true);
     parser.add("", "--max_steps", true);
     parser.add("", "--poll-batch", true);
     parser.add("", "--poll-interval", true);
@@ -943,6 +1024,8 @@ int main(int argc, char **argv)
     parser.add("", "--full", false);
     parser.add("", "--deterministic", false);
     parser.add("", "--debug", false);
+    parser.add("", "--debug-kernel", false);
+    parser.add("", "--selftest", false);
 
     try {
         parser.parse(argc, argv);
@@ -1094,6 +1177,12 @@ int main(int argc, char **argv)
                 } catch(...) {
                     throw std::string("invalid argument");
                 }
+            } else if(optArg.equals("", "--wilds")) {
+                try {
+                    _config.wilds = util::parseUInt32(optArg.arg);
+                } catch(...) {
+                    throw std::string("invalid argument");
+                }
             } else if(optArg.equals("", "--max_steps")) {
                 try {
                     _config.maxSteps = util::parseUInt64(optArg.arg);
@@ -1122,6 +1211,10 @@ int main(int argc, char **argv)
                 _config.deterministic = true;
             } else if(optArg.equals("", "--debug")) {
                 _config.debug = true;
+            } else if(optArg.equals("", "--debug-kernel")) {
+                _config.debugKernel = true;
+            } else if(optArg.equals("", "--selftest")) {
+                _config.selftest = true;
             }
 
 		} catch(std::string err) {
