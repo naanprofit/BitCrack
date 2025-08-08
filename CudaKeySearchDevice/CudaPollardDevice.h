@@ -31,7 +31,7 @@ public:
                        const secp256k1::uint256 &seed, bool sequential) override;
     void startWildWalk(const secp256k1::uint256 &start, uint64_t steps,
                        const secp256k1::uint256 &seed, bool sequential) override;
-    bool popResult(PollardMatch &out) override { (void)out; return false; }
+    bool popResult(PollardWindow &out) override { (void)out; return false; }
 
     /**
      * Enumerate a key range using the ``windowKernel`` and forward any
