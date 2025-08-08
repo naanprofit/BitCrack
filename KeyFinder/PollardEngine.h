@@ -59,7 +59,8 @@ public:
                   unsigned int batchSize = 1024,
                   unsigned int pollInterval = 100,
                   bool sequential = false,
-                  bool debug = false);
+                  bool debug = false,
+                  bool kernelDebug = false);
 
     // Add a constraint of the form k \equiv value (mod ``modulus``) for ``target``
     void addConstraint(size_t target, const secp256k1::uint256 &modulus,
@@ -133,6 +134,7 @@ private:
     secp256k1::uint256 _U;                    // search upper bound
     bool _sequential;                         // sequential walk mode
     bool _debug;                              // enable verbose logging
+    bool _kernelDebug;                        // enable kernel launch diagnostics
 
 
     // Metrics

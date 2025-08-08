@@ -361,10 +361,11 @@ PollardEngine::PollardEngine(ResultCallback cb,
                              unsigned int batchSize,
                              unsigned int pollInterval,
                              bool sequential,
-                             bool debug)
+                             bool debug,
+                             bool kernelDebug)
     : _callback(cb), _windowBits(windowBits),
       _batchSize(batchSize), _pollInterval(pollInterval), _L(L), _U(U),
-      _sequential(sequential), _debug(debug) {
+      _sequential(sequential), _debug(debug), _kernelDebug(kernelDebug) {
     // Filter offsets supplied by the user to remove any entry that would extend
     // beyond the 160-bit RIPEMD160 digest. Offsets are specified relative to
     // the most-significant bit of the hash, so convert them to the
@@ -690,6 +691,12 @@ void PollardEngine::runTameWalk(const uint256 &start, uint64_t steps, const uint
                     "Running deterministic sequential walk using GPU kernels");
     }
 
+    if(_kernelDebug) {
+        Logger::log(LogLevel::Debug,
+                    "Launch tame walk start=" + start.toString(16) +
+                    " steps=" + util::format(steps));
+    }
+
     _device->startTameWalk(start, steps, seed, _sequential);
     pollDevice();
 
@@ -720,6 +727,12 @@ void PollardEngine::runWildWalk(const uint256 &start, uint64_t steps, const uint
     if(_sequential) {
         Logger::log(LogLevel::Info,
                     "Running deterministic sequential walk using GPU kernels");
+    }
+
+    if(_kernelDebug) {
+        Logger::log(LogLevel::Debug,
+                    "Launch wild walk start=" + start.toString(16) +
+                    " steps=" + util::format(steps));
     }
 
     _device->startWildWalk(start, steps, seed, _sequential);

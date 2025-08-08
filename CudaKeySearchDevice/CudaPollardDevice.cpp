@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include "windowKernel.h"
 #include <cstdio>
+#include "../Logger/Logger.h"
+#include "../util/util.h"
 
 using namespace secp256k1;
 
@@ -121,6 +123,14 @@ void CudaPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
     }
 
     unsigned int totalThreads = threadsPerBlock * blocks;
+
+    if(_debug) {
+        Logger::log(LogLevel::Debug,
+                    "CUDA tame walk blocks=" + util::format(blocks) +
+                    " threads=" + util::format(threadsPerBlock) +
+                    " total=" + util::format(totalThreads) +
+                    " steps=" + util::format(steps));
+    }
 
     // Build per-thread 256-bit seeds and starting scalars using the ``start`` value
     std::vector<uint32_t> h_seeds(totalThreads * 8);
@@ -279,6 +289,14 @@ void CudaPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
     }
 
     unsigned int totalThreads = threadsPerBlock * blocks;
+
+    if(_debug) {
+        Logger::log(LogLevel::Debug,
+                    "CUDA wild walk blocks=" + util::format(blocks) +
+                    " threads=" + util::format(threadsPerBlock) +
+                    " total=" + util::format(totalThreads) +
+                    " steps=" + util::format(steps));
+    }
 
     // Prepare per-thread 256-bit seeds, starting scalars and points
     std::vector<uint32_t> h_seeds(totalThreads * 8);

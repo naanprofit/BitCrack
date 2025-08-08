@@ -10,6 +10,8 @@
 #include "clContext.h"
 #include "clutil.h"
 
+#include "../Logger/Logger.h"
+#include "../util/util.h"
 
 using namespace secp256k1;
 using cl::clCall;
@@ -85,7 +87,8 @@ void runWalk(PollardEngine &engine,
              const uint256 &seed,
              const uint256 *start,
              bool wild,
-             bool sequential) {
+             bool sequential,
+             bool debug) {
     auto devices = cl::getDevices();
     if(devices.empty()) {
         return;
@@ -99,6 +102,14 @@ void runWalk(PollardEngine &engine,
     cl_uint computeUnits = 1;
     clGetDeviceInfo(devId, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &computeUnits, NULL);
     size_t global = local * computeUnits;
+
+    if(debug) {
+        Logger::log(LogLevel::Debug,
+                    std::string("CL ") + (wild ? "wild" : "tame") +
+                    " walk global=" + util::format(static_cast<uint64_t>(global)) +
+                    " local=" + util::format(static_cast<uint64_t>(local)) +
+                    " steps=" + util::format(steps));
+    }
 
     std::ifstream shaFile("clMath/sha256.cl");
     std::ifstream secpFile("clMath/secp256k1.cl");
@@ -298,13 +309,13 @@ void runWalk(PollardEngine &engine,
 void CLPollardDevice::startTameWalk(const uint256 &start, uint64_t steps,
                                     const uint256 &seed, bool sequential) {
     runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, &start,
-            false, sequential);
+            false, sequential, _debug);
 }
 
 void CLPollardDevice::startWildWalk(const uint256 &start, uint64_t steps,
                                     const uint256 &seed, bool sequential) {
     runWalk(_engine, _windowBits, _offsets, _targets, steps, seed, &start,
-            true, sequential);
+            true, sequential, _debug);
 }
 
 extern "C" bool runCLHashWindow(const unsigned int h[5], unsigned int offset,
