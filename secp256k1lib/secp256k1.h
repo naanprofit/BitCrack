@@ -276,7 +276,7 @@ namespace secp256k1 {
 			return (this->v[0] & 1) == 0;
 		}
 
-		std::string toString(int base = 16);
+               std::string toString(int base = 16) const;
 
         uint64_t toUint64()
         {
